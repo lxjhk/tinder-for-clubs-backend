@@ -29,3 +29,20 @@ func Close() {
 	err := DB.Close()
 	common.ErrFatalLog(err)
 }
+
+func configSettings() {
+	//gorm default create tables with plural form.
+	DB.SingularTable(true)
+	//enable gorm with log
+	DB.LogMode(true)
+}
+
+//Update or create tables
+func migrateTables() {
+	DB.AutoMigrate(&AdminAccount{})
+	DB.AutoMigrate(&LoginHistory{})
+	DB.AutoMigrate(&ClubInfo{})
+	DB.AutoMigrate(&UserList{})
+	DB.AutoMigrate(&ClubTags{})
+	DB.AutoMigrate(&ClubTagRelationship{})
+}
