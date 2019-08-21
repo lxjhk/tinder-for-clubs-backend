@@ -30,23 +30,25 @@ type LoginHistory struct {
 // Club Information
 type ClubInfo struct {
 	gorm.Model
-	ClubID      string `gorm:"type:varchar(100);"`
-	Name        string `gorm:"not null;type:varchar(1000);"`
-	Website     string `gorm:"type:varchar(500);"`
-	Email       string `gorm:"type:varchar(500);"`
-	GroupLink   string `gorm:"type:varchar(500);"`
-	VideoLink   string `gorm:"type:varchar(500);"`
+	ClubID    string `gorm:"type:varchar(100);"`
+	Name      string `gorm:"not null;type:varchar(1000);"`
+	Website   string `gorm:"type:varchar(500);"`
+	Email     string `gorm:"type:varchar(500);"`
+	GroupLink string `gorm:"type:varchar(500);"`
+	VideoLink string `gorm:"type:varchar(500);"`
+	// Whether the club is viewable
 	Published   bool   `gorm:"not null;"`
-	Description string `gorm:"type:varchar(2000);"`
+	Description string `gorm:"type:varchar(5000);"`
 
-	// Stores the ID of the pictures
-	Pic1ID string
-	Pic2ID string
-	Pic3ID string
-	Pic4ID string
-	Pic5ID string
-	Pic6ID string
+	// Stores the ID of the pictures. The first picture will also be the cover photo
+	Pic1ID string `gorm:"type:varchar(100);"`
+	Pic2ID string `gorm:"type:varchar(100);"`
+	Pic3ID string `gorm:"type:varchar(100);"`
+	Pic4ID string `gorm:"type:varchar(100);"`
+	Pic5ID string `gorm:"type:varchar(100);"`
+	Pic6ID string `gorm:"type:varchar(100);"`
 
+	// Last update time of this entry
 	LastUpdateTime int64
 }
 

@@ -6,10 +6,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"log"
 	"net/http"
 	"tinder-for-clubs-backend/common"
 	"tinder-for-clubs-backend/config"
 	"tinder-for-clubs-backend/db"
+	"tinder-for-clubs-backend/httpserver"
 )
 
 var router *gin.Engine
@@ -47,6 +49,8 @@ func initializeRoutes() {
 				"message": "pong",
 			})
 	})
+
+	router.POST("/login", AdminLogin)
 }
 
 // Handles Admin Login
@@ -55,8 +59,9 @@ func AdminLogin(c *gin.Context) {
 	authToken := c.PostForm("authToken")
 
 	var AdminAccount db.AdminAccount
-	if db.DB.Where("authToken = ?", authToken).First(&AdminAccount).RecordNotFound() {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication failed"})
+	if err := db.DB.Where("auth_string = ?", authToken).First(&AdminAccount).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		log.Print(err)
 		return
 	}
 
@@ -66,5 +71,5 @@ func AdminLogin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Successfully authenticated user"})
+	c.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }

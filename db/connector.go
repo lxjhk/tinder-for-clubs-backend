@@ -14,11 +14,13 @@ var DB *gorm.DB
 func Init(dbCred config.DBCredential) {
 	var err error
 	log.Printf("Connection Info: %v", dbCred.ConnectionCredentialLogString())
-	DB, err = gorm.Open("mysql", dbCred.GetConnectionString()) // QH Dev Env
+	DB, err = gorm.Open("mysql", dbCred.GetConnectionString())
 	common.ErrFatalLog(err)
 
 	// Checking connection status
 	err = DB.DB().Ping()
+	DB.LogMode(true)
+
 	if err != nil {
 		log.Fatalf("DB connection failed %s", err.Error())
 	}
