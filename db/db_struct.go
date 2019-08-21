@@ -56,6 +56,17 @@ func GetClubInfoById(id string) (*ClubInfo, error) {
 	return clubInfo, DB.Where("id = ?", id).Find(clubInfo).Error
 }
 
+func (ci ClubInfo) UpdateAllPicIds() error {
+	return DB.Model(&ClubInfo{}).Where("club_uuid = ?", ci.ID).UpdateColumns(ClubInfo{
+		Pic1ID:ci.Pic1ID,
+		Pic2ID:ci.Pic2ID,
+		Pic3ID:ci.Pic3ID,
+		Pic4ID:ci.Pic4ID,
+		Pic5ID:ci.Pic5ID,
+		Pic6ID:ci.Pic6ID,
+	}).Error
+}
+
 type UserList struct {
 	gorm.Model
 	LoopUID      string    `gorm:"not null;"`
