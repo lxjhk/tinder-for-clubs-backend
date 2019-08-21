@@ -74,7 +74,7 @@ func AdminLogin(c *gin.Context) {
 	}
 
 	// Save the username in the session
-	session.Set(SESSION_USER_KEY, AdminAccount.ID) // In real world usage you'd set this to the users ID
+	session.Set(SESSION_USER_KEY, AdminAccount.ID)
 	if err := session.Save(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 		return
