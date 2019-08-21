@@ -1,7 +1,10 @@
 package main
 
 import (
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/memstore"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"net/http"
 	"tinder-for-clubs-backend/common"
@@ -11,6 +14,9 @@ import (
 
 var router *gin.Engine
 
+const (
+	SESSION_USER_KEY = "SESSION_USER_KEY"
+)
 
 func main() {
 	// Reading configuration file
@@ -22,9 +28,11 @@ func main() {
 	//Deferred Closed
 	defer db.Close()
 
-
-	// Initialise HTTP framework
+	// Initialise HTTP framework and Session Store
 	router = gin.Default()
+	store := memstore.NewStore([]byte(uuid.New().String()))
+	router.Use(sessions.Sessions("AdminSession", store))
+
 	initializeRoutes()
 	err := router.Run() // listen and serve on 0.0.0.0:8080
 	common.ErrFatalLog(err)
@@ -39,4 +47,24 @@ func initializeRoutes() {
 				"message": "pong",
 			})
 	})
+}
+
+// Handles Admin Login
+func AdminLogin(c *gin.Context) {
+	session := sessions.Default(c)
+	authToken := c.PostForm("authToken")
+
+	var AdminAccount db.AdminAccount
+	if db.DB.Where("authToken = ?", authToken).First(&AdminAccount).RecordNotFound() {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication failed"})
+		return
+	}
+
+	// Save the username in the session
+	session.Set(SESSION_USER_KEY, AdminAccount.ID) // In real world usage you'd set this to the users ID
+	if err := session.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully authenticated user"})
 }

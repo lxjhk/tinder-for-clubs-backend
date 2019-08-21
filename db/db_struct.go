@@ -8,7 +8,7 @@ import (
 // Admin Accounts
 type AdminAccount struct {
 	gorm.Model
-	ID         int    `gorm:"primary_key;AUTO_INCREMENT"`
+	UserID     int    `gorm:"not null;"`
 	AuthString string `gorm:"type:varchar(1000);"`
 	ClubID     string
 	// For managers of Tinder for Clubs
@@ -18,7 +18,6 @@ type AdminAccount struct {
 // Admin Account Login History
 type LoginHistory struct {
 	gorm.Model
-	ID       int    `gorm:"AUTO_INCREMENT"`
 	Username string `gorm:"not null;index:username"`
 	IP       string
 	// Whether the login attempt is successful
@@ -31,7 +30,7 @@ type LoginHistory struct {
 // Club Information
 type ClubInfo struct {
 	gorm.Model
-	ID          string `gorm:"type:varchar(100);"`
+	ClubID      string `gorm:"type:varchar(100);"`
 	Name        string `gorm:"not null;type:varchar(1000);"`
 	Website     string `gorm:"type:varchar(500);"`
 	Email       string `gorm:"type:varchar(500);"`

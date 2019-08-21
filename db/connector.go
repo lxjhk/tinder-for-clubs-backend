@@ -23,6 +23,21 @@ func Init(dbCred config.DBCredential) {
 		log.Fatalf("DB connection failed %s", err.Error())
 	}
 	log.Printf("DB connection established successfully!")
+
+	// Struct AutoMigrate
+	err = DB.AutoMigrate(&AdminAccount{}).Error
+	common.ErrFatalLog(err)
+	DB.AutoMigrate(&LoginHistory{})
+	common.ErrFatalLog(err)
+	DB.AutoMigrate(&ClubInfo{})
+	common.ErrFatalLog(err)
+	DB.AutoMigrate(&UserList{})
+	common.ErrFatalLog(err)
+	DB.AutoMigrate(&ClubTags{})
+	common.ErrFatalLog(err)
+	DB.AutoMigrate(&ClubTagRelationship{})
+	common.ErrFatalLog(err)
+
 }
 
 func Close() {

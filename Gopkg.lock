@@ -2,6 +2,17 @@
 
 
 [[projects]]
+  digest = "1:918fc2fcde84603c31616b4745babd3d3602008d405727de09e4443805ada3ed"
+  name = "github.com/gin-contrib/sessions"
+  packages = [
+    ".",
+    "memstore",
+  ]
+  pruneopts = "UT"
+  revision = "0346667ecc8df788dd43696ed7b3c5aaba4c2cfa"
+  version = "v0.0.1"
+
+[[projects]]
   digest = "1:3ee1d175a75b911a659fbd860060874c4f503e793c5870d13e5a0ede529a63cf"
   name = "github.com/gin-contrib/sse"
   packages = ["."]
@@ -37,6 +48,38 @@
   pruneopts = "UT"
   revision = "6c65a5562fc06764971b7c5d05c76c75e84bdbf7"
   version = "v1.3.2"
+
+[[projects]]
+  digest = "1:582b704bebaa06b48c29b0cec224a6058a09c86883aaddabde889cd1a5f73e1b"
+  name = "github.com/google/uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "0cd6bf5da1e1c83f8b45653022c74f71af0538a4"
+  version = "v1.1.1"
+
+[[projects]]
+  digest = "1:c79fb010be38a59d657c48c6ba1d003a8aa651fa56b579d959d74573b7dff8e1"
+  name = "github.com/gorilla/context"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "08b5f424b9271eedf6f9f0ce86cb9396ed337a42"
+  version = "v1.1.1"
+
+[[projects]]
+  digest = "1:e72d1ebb8d395cf9f346fd9cbc652e5ae222dd85e0ac842dc57f175abed6d195"
+  name = "github.com/gorilla/securecookie"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e59506cc896acb7f7bf732d4fdf5e25f7ccd8983"
+  version = "v1.1.1"
+
+[[projects]]
+  digest = "1:172c862eabc72e90f461bcef223c49869628bec6d989386dfb03281ae3222148"
+  name = "github.com/gorilla/sessions"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4355a998706e83fe1d71c31b07af94e34f68d74a"
+  version = "v1.2.0"
 
 [[projects]]
   digest = "1:2d26302fec213644ef79f6df82f426389b4f3b226f39e2c8dc8806a0f6a63860"
@@ -99,6 +142,14 @@
   version = "1.0.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:f8d3b3adc6a9fc0ef67730c0e09cae58e4c0b9fbf4de595e00947f3e70d56ead"
+  name = "github.com/quasoft/memstore"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "84a050167438e9a9344feb4d869289db0969b2fe"
+
+[[projects]]
   digest = "1:5a1cf4e370bc86137b58da2ae065e76526d32b11f62a7665f36dbd5f41fa95ff"
   name = "github.com/ugorji/go"
   packages = ["codec"]
@@ -131,14 +182,6 @@
   version = "v8.18.2"
 
 [[projects]]
-  digest = "1:a4b04b5314d49a67ad022fa7693453ee2b823ab99314f52fa3930ed31085dfef"
-  name = "gopkg.in/guregu/null.v3"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "80515d440932108546bcade467bb7d6968e812e2"
-  version = "v3.4.0"
-
-[[projects]]
   digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -150,11 +193,13 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/gin-contrib/sessions",
+    "github.com/gin-contrib/sessions/memstore",
     "github.com/gin-gonic/gin",
+    "github.com/google/uuid",
     "github.com/jinzhu/gorm",
     "github.com/jinzhu/gorm/dialects/mysql",
     "github.com/jinzhu/gorm/dialects/sqlite",
-    "gopkg.in/guregu/null.v3",
     "gopkg.in/yaml.v2",
   ]
   solver-name = "gps-cdcl"
