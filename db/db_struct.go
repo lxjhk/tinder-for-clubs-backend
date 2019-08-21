@@ -10,7 +10,7 @@ type AdminAccount struct {
 	gorm.Model
 	UserID     int    `gorm:"not null;"`
 	AuthString string `gorm:"type:varchar(1000);"`
-	ClubID     string
+	ClubID     string `gorm:"type:varchar(40);"`
 	// For managers of Tinder for Clubs
 	IsAdmin string
 }
@@ -52,6 +52,11 @@ type ClubInfo struct {
 	LastUpdateTime int64
 }
 
+func GetClubInfoById(id string) (*ClubInfo, error) {
+	clubInfo := &ClubInfo{}
+	return clubInfo, DB.Where("id = ?", id).Find(clubInfo).Error
+}
+
 type UserList struct {
 	gorm.Model
 	LoopUID      string    `gorm:"not null;"`
@@ -65,8 +70,25 @@ type ClubTags struct {
 	Tag string `gorm:"not null;"`
 }
 
+func (ct *ClubTags) Insert() error {
+	return DB.Create(&ct).Error
+}
+
+func SelectClubTags() ([]ClubTags, error) {
+	tags := make([]ClubTags, 0)
+	return tags, DB.Find(&tags).Error
+}
+
 type ClubTagRelationship struct {
 	gorm.Model
 	ClubUUID string `gorm:"not null;"`
 	TagID    string `gorm:"not null;"`
+}
+
+func (cr *ClubTagRelationship) Insert() error {
+	return DB.Create(&cr).Error
+}
+
+func (cr *ClubTagRelationship) Update() error {
+	return DB.Model(&ClubTagRelationship{}).Where("club_uuid = ? and tag_id = ?", cr.ClubUUID, cr.TagID).UpdateColumns(*cr).Error
 }

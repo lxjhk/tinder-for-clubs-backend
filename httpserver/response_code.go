@@ -3,13 +3,13 @@ package httpserver
 //ErrorCode definite
 
 type ResponseCode struct {
-	Code    int
-	Message string
+	Code    int    `json:"code"`
+	Message string `json:"msg"`
 }
 
 type Response struct {
-	Status  ResponseCode
-	Payload interface{}
+	Status  ResponseCode `json:"status"`
+	Payload interface{}  `json:"payload"`
 }
 
 var SUCCESS = ResponseCode{Code: 2000, Message: "Successful!"}

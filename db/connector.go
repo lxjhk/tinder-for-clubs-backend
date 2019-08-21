@@ -20,6 +20,7 @@ func Init(dbCred config.DBCredential) {
 	// Checking connection status
 	err = DB.DB().Ping()
 	DB.LogMode(true)
+	DB.SingularTable(true)
 
 	if err != nil {
 		log.Fatalf("DB connection failed %s", err.Error())
