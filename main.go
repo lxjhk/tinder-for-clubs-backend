@@ -49,7 +49,6 @@ func initializeRoutes() {
 	router.GET("/ping", Pong)
 	router.POST("/login", AdminLogin)
 	router.POST("/uploadOne", uploadSinglePicture)
-	router.POST("/uploadOne", uploadSinglePicture)
 	router.POST("/clubInfo/update", updateClubInfo)
 
 }
