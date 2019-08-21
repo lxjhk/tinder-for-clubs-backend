@@ -8,11 +8,34 @@ import (
 // Admin Accounts
 type AdminAccount struct {
 	gorm.Model
-	UserID     int    `gorm:"not null;"`
-	AuthString string `gorm:"type:varchar(1000);"`
-	ClubID     string `gorm:"type:varchar(40);"`
+	UserID     string `gorm:"not null;" json:"user_id"`
+	AuthString string `gorm:"type:varchar(1000);" json:"auth_string"`
+	ClubID     string `gorm:"type:varchar(40);" json:"club_id"`
 	// For managers of Tinder for Clubs
-	IsAdmin string
+	IsAdmin bool `gorm:"type:tinyint(1);" json:"is_admin"`
+}
+
+func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
+	return txDb.Create(ac).Error
+}
+
+func (ac *AdminAccount) Update() error {
+	return DB.Model(&AdminAccount{}).Where("user_id = ?",ac.UserID).Updates(*ac).Error
+}
+
+func GetAccountById(id string) (*AdminAccount, error) {
+	var account *AdminAccount
+	return account, DB.Where("id = ?", id).First(account).Error
+}
+
+func GetAllAccounts() ([]AdminAccount, error) {
+	accounts := make([]AdminAccount, 0)
+	return accounts, DB.Find(&accounts).Error
+}
+
+func GetAccountByUserId(userId string) (*AdminAccount, error) {
+	var account *AdminAccount
+	return account, DB.Where("user_id = ?", userId).First(account).Error
 }
 
 // Admin Account Login History
@@ -30,34 +53,39 @@ type LoginHistory struct {
 // Club Information
 type ClubInfo struct {
 	gorm.Model
-	ClubID    string `gorm:"type:varchar(100);"`
-	Name      string `gorm:"not null;type:varchar(1000);"`
-	Website   string `gorm:"type:varchar(500);"`
-	Email     string `gorm:"type:varchar(500);"`
-	GroupLink string `gorm:"type:varchar(500);"`
-	VideoLink string `gorm:"type:varchar(500);"`
+	ClubID    string `gorm:"type:varchar(100);" json:"club_id" binding:"required"`
+	Name      string `gorm:"not null;type:varchar(1000);" json:"name"`
+	Website   string `gorm:"type:varchar(500);" json:"website"`
+	Email     string `gorm:"type:varchar(500);" json:"email"`
+	GroupLink string `gorm:"type:varchar(500);" json:"group_link"`
+	VideoLink string `gorm:"type:varchar(500);" json:"video_link"`
 	// Whether the club is viewable
-	Published   bool   `gorm:"not null;"`
-	Description string `gorm:"type:varchar(5000);"`
+	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
+	Description string `gorm:"type:varchar(5000);" json:"description"`
 
 	// Stores the ID of the pictures. The first picture will also be the cover photo
-	Pic1ID string `gorm:"type:varchar(100);"`
-	Pic2ID string `gorm:"type:varchar(100);"`
-	Pic3ID string `gorm:"type:varchar(100);"`
-	Pic4ID string `gorm:"type:varchar(100);"`
-	Pic5ID string `gorm:"type:varchar(100);"`
-	Pic6ID string `gorm:"type:varchar(100);"`
-
-	// Last update time of this entry
-	LastUpdateTime int64
+	Pic1ID string `gorm:"type:varchar(100);" json:"pic1_id"`
+	Pic2ID string `gorm:"type:varchar(100);" json:"pic2_id"`
+	Pic3ID string `gorm:"type:varchar(100);" json:"pic3_id"`
+	Pic4ID string `gorm:"type:varchar(100);" json:"pic4_id"`
+	Pic5ID string `gorm:"type:varchar(100);" json:"pic5_id"`
+	Pic6ID string `gorm:"type:varchar(100);" json:"pic6_id"`
 }
 
-func GetClubInfoById(id string) (*ClubInfo, error) {
+func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
+	return txDb.Create(ci).Error
+}
+
+func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 	clubInfo := &ClubInfo{}
-	return clubInfo, DB.Where("id = ?", id).Find(clubInfo).Error
+	return clubInfo, DB.Where("club_id = ?", id).Find(clubInfo).Error
 }
 
-func (ci ClubInfo) UpdateAllPicIds() error {
+func (ci *ClubInfo) Update() error {
+	return DB.Model(&ClubInfo{}).Where("club_uuid = ?", ci.ID).Updates(*ci).Error
+}
+
+func (ci *ClubInfo) UpdateAllPicIds() error {
 	return DB.Model(&ClubInfo{}).Where("club_uuid = ?", ci.ID).UpdateColumns(ClubInfo{
 		Pic1ID: ci.Pic1ID,
 		Pic2ID: ci.Pic2ID,

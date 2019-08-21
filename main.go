@@ -6,6 +6,7 @@ import (
 	"github.com/gin-contrib/sessions/memstore"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -47,10 +48,122 @@ func main() {
 
 func initializeRoutes() {
 	router.GET("/ping", Pong)
-	router.POST("/login", AdminLogin)
-	router.POST("/uploadOne", uploadSinglePicture)
-	router.POST("/clubInfo/update", updateClubInfo)
+	//For admin and club users to login
+	router.POST("/account/login", AdminLogin)
 
+	//For admin to manage account
+	router.POST("/account/create", createNewClubAccount)
+	router.GET("/account/list", listAccounts)
+	router.GET("/account/get/:userId",getAccount)
+
+	//For club account to upload picture and update club info.
+	router.POST("/clubInfo/uploadOne", uploadSinglePicture)
+	router.POST("/clubInfo/update", updateClubInfo)
+	router.GET("/clubInfo/get", getClubInfo)
+
+}
+
+//目前根据登录club账户直接获取对应club info
+func getClubInfo(ctx *gin.Context) {
+	account := tryToGetAuthAccount(ctx)
+
+	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusOK, httpserver.ConstructResponse(httpserver.NOT_FOUND, nil))
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfo))
+}
+
+func getAccount(ctx *gin.Context) {
+	account := tryToGetAuthAccount(ctx)
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	userId := ctx.Param("userId")
+	account, err := db.GetAccountByUserId(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
+}
+
+func listAccounts(ctx *gin.Context) {
+	account := tryToGetAuthAccount(ctx)
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	accounts, err := db.GetAllAccounts()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(accounts))
+}
+
+//authenticate user from session and returns the corresponding account info.
+func tryToGetAuthAccount(ctx *gin.Context) *db.AdminAccount {
+	//get user id from session to get its detail info from DB.
+	session := sessions.Default(ctx)
+	id := session.Get(SESSION_USER_KEY).(string)
+	account, err := db.GetAccountById(id)
+	if err != nil {
+		//response immediately whatever error occurs
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		return nil
+	}
+	return account
+}
+
+//creates a club account and its club info.
+func createNewClubAccount(ctx *gin.Context) {
+	account := tryToGetAuthAccount(ctx)
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	//construct account and club info
+	clubAccount := db.AdminAccount{
+		UserID: uuid.New().String(),
+		//TODO the rule generate auth string, SHA512(UUID) ?
+		AuthString: "",
+		ClubID: uuid.New().String(),
+		IsAdmin: false,
+	}
+	clubInfo := db.ClubInfo{
+		ClubID: clubAccount.ClubID,
+	}
+
+	//create transaction to insert account and club info
+	txDb := db.DB.Begin()
+	err := clubAccount.Insert(txDb)
+	if err != nil {
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	err = clubInfo.Insert(txDb)
+	if err != nil {
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	txDb.Commit()
+
+	//response account created
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubAccount))
 }
 
 func Pong(c *gin.Context) {
@@ -76,140 +189,127 @@ func AdminLogin(c *gin.Context) {
 	// Save the username in the session
 	session.Set(SESSION_USER_KEY, AdminAccount.ID)
 	if err := session.Save(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
+		c.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_SESSION_FAILED, nil))
 		return
 	}
-	c.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 
+	c.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
+//Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
-	//获取用户信息，获取其club id
-	var clubId = ""
-	//获取club信息
-	clubInfo, err := db.GetClubInfoById(clubId)
-	_ = clubInfo
+	account := tryToGetAuthAccount(ctx)
+	//get the source club info from DB.
+	sourceClub, err := db.GetClubInfoByClubId(account.ClubID)
 	if err != nil {
-		log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-		ctx.JSON(http.StatusInternalServerError, ResResult{
-			Code: 2001,
-			Msg:  "internal error",
-		})
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
 	}
 
-	//图片id检查
+	var targetClub db.ClubInfo
+	if err := ctx.ShouldBindJSON(&targetClub);err != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
 
-}
+	//ensures user is updating his own club
+	if sourceClub.ClubID != targetClub.ClubID {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
 
-type ResResult struct {
-	Code int64       `json:"code"`
-	Msg  string      `json:"msg"`
-	Data interface{} `json:"data"`
+	//update club info
+	if err = targetClub.Update();err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
+	account := tryToGetAuthAccount(ctx)
+
 	pid := ctx.Query("pid")
 	if !(pid == "1" || pid == "2" || pid == "3" || pid == "4" || pid == "5" || pid == "6") {
-		ctx.JSON(http.StatusBadRequest, ResResult{
-			Code: 2002,
-			Msg:  "invalid params",
-		})
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
 	}
 
-	//上传图片
+	//get multipart file from the multipart form data.
 	multipart, err := ctx.MultipartForm()
 	if err != nil {
 		log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-		ctx.JSON(http.StatusInternalServerError, ResResult{
-			Code: 2001,
-			Msg:  "internal error",
-		})
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
 	}
-
+	//returns error when not one picture.
 	files := multipart.File["image"]
 	if len(files) > 1 || len(files) == 0 {
-		log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-		ctx.JSON(http.StatusBadRequest, ResResult{
-			Code: 2002,
-			Msg:  "invalid params",
-		})
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_NUM_NOT_SUPPORTED, nil))
+		return
 	}
 
-	newPicUid := uuid.New().String()
-	for _, file := range files {
-		fileType := file.Header.Get("Content-Type")
-		if !strings.HasPrefix(fileType, "image") {
-			ctx.JSON(http.StatusBadRequest, ResResult{
-				Code: 2004,
-				Msg:  "not picture",
-			})
-		}
-		ext := path.Ext(file.Filename)
-		newPicUid = fmt.Sprintf("%s.%s", newPicUid, ext)
-		err := ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, newPicUid))
-		if err != nil {
-			log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-			ctx.JSON(http.StatusInternalServerError, ResResult{
-				Code: 2001,
-				Msg:  "internal error",
-			})
-		}
+	//ensures what uploaded is a picture and save it to specified path.
+	file := files[0]
+	fileType := file.Header.Get("Content-Type")
+	if !strings.HasPrefix(fileType, "image") {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.UPLOAD_TYPE_NOT_SUPPORTED, nil))
+		return
 	}
-
-	//获取用户信息，获取其club id
-	var clubId = ""
-	//获取club信息
-	clubInfo, err := db.GetClubInfoById(clubId)
+	extName := path.Ext(file.Filename)
+	picUid := fmt.Sprintf("%s.%s", uuid.New().String(), extName)
+	err = ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, picUid))
 	if err != nil {
-		log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-		ctx.JSON(http.StatusInternalServerError, ResResult{
-			Code: 2001,
-			Msg:  "internal error",
-		})
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_PICTURE_FAILED, nil))
+		return
 	}
 
-	//原图删除检查
+	//get the source club info from DB.
+	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//ensures the source picture has been removed when set the target picture
 	switch pid {
 	case "1":
 		removePicIfExist(clubInfo.Pic1ID)
-		clubInfo.Pic1ID = newPicUid
+		clubInfo.Pic1ID = picUid
 		break
 	case "2":
 		removePicIfExist(clubInfo.Pic2ID)
-		clubInfo.Pic2ID = newPicUid
+		clubInfo.Pic2ID = picUid
 		break
 	case "3":
 		removePicIfExist(clubInfo.Pic3ID)
-		clubInfo.Pic3ID = newPicUid
+		clubInfo.Pic3ID = picUid
 		break
 	case "4":
 		removePicIfExist(clubInfo.Pic4ID)
-		clubInfo.Pic4ID = newPicUid
+		clubInfo.Pic4ID = picUid
 		break
 	case "5":
 		removePicIfExist(clubInfo.Pic5ID)
-		clubInfo.Pic5ID = newPicUid
+		clubInfo.Pic5ID = picUid
 		break
 	case "6":
 		removePicIfExist(clubInfo.Pic6ID)
-		clubInfo.Pic6ID = newPicUid
+		clubInfo.Pic6ID = picUid
 		break
 	}
 
-	//更新最新的club 信息
+	//update the picture info of current club to the latest.
 	err = clubInfo.UpdateAllPicIds()
 	if err != nil {
-		removePicIfExist(newPicUid)
-		ctx.JSON(http.StatusInternalServerError, ResResult{
-			Code: 2001,
-			Msg:  "internal error",
-		})
+		//remove the uploaded picture when error
+		removePicIfExist(picUid)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
 	}
 
-	ctx.JSON(http.StatusOK, ResResult{
-		Code: 1000,
-		Msg:  "success",
-	})
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
 func removePicIfExist(picName string) {
