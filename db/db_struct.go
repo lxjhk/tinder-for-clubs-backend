@@ -37,8 +37,8 @@ type ClubInfo struct {
 	Email       string `gorm:"type:varchar(500);"`
 	GroupLink   string `gorm:"type:varchar(500);"`
 	VideoLink   string `gorm:"type:varchar(500);"`
-	Live        bool   `gorm:"not null;"`
-	Description string `gorm:"type:varchar(500);"`
+	Published   bool   `gorm:"not null;"`
+	Description string `gorm:"type:varchar(2000);"`
 
 	// Stores the ID of the pictures
 	Pic1ID string
@@ -47,13 +47,15 @@ type ClubInfo struct {
 	Pic4ID string
 	Pic5ID string
 	Pic6ID string
+
+	LastUpdateTime int64
 }
 
 type UserList struct {
 	gorm.Model
-	LoopUID  string    `gorm:"not null;"`
-	LoopName string    `gorm:"not null;"`
-	JoinTime time.Time `gorm:"not null;"`
+	LoopUID      string    `gorm:"not null;"`
+	LoopUserName string    `gorm:"not null;"`
+	JoinTime     time.Time `gorm:"not null;"`
 }
 
 type ClubTags struct {
