@@ -25,7 +25,6 @@ var router *gin.Engine
 var globalConfig config.GlobalConfiguration
 
 const (
-	SESSION_USER_KEY = "SESSION_USER_KEY"
 	AUTH_ACCOUNT = "AUTH_ACCOUNT"
 )
 
@@ -44,29 +43,31 @@ func main() {
 	store := memstore.NewStore([]byte(uuid.New().String()))
 	router.Use(sessions.Sessions("AdminSession", store))
 
-	//Initialize authentication middleware
-	router.Use(authInterceptor())
-
 	initializeRoutes()
 	err := router.Run() // listen and serve on 0.0.0.0:8080
 	common.ErrFatalLog(err)
 }
 
 func initializeRoutes() {
+	//Initialize authentication middleware
+	router.Use(authInterceptor())
+
+	//Ping endpoint for testing
 	router.GET("/ping", Pong)
+
 	//For admin and club users to login
-	router.POST("/account/login", AdminLogin)
+	router.POST("/admin/login", AdminLogin)
 
 	//For admin to manage account
-	router.POST("/account/create", createNewClubAccount)
-	router.GET("/account/list", listAccounts)
-	router.GET("/account/get",getLoginAccount)
-	router.GET("/account/get/:userId", getAccountByUserId)
+	router.POST("/admin/account/create", createNewClubAccount)
+	router.GET("/admin/account/list", listAccounts)
+	router.GET("/admin/account/get",getLoginAccount)
+	router.GET("/admin/account/get/:userId", getAccountByUserId)
 
 	//For club account to upload picture and update club info.
-	router.POST("/clubInfo/uploadOne", uploadSinglePicture)
-	router.POST("/clubInfo/update", updateClubInfo)
-	router.GET("/clubInfo/get", getClubInfo)
+	router.POST("/admin/clubInfo/uploadOne", uploadSinglePicture)
+	router.POST("/admin/clubInfo/update", updateClubInfo)
+	router.GET("/admin/clubInfo/get", getClubInfo)
 
 
 }
@@ -79,31 +80,33 @@ func getLoginAccount(ctx *gin.Context) {
 func authInterceptor() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		//user is signing in
-		uri := ctx.Request.RequestURI
-		if "/account/login" == uri {
+		url := ctx.Request.RequestURI
+		if "/admin/login" == url {
 			ctx.Next()
 			return
 		}
 
 		//get user id from session to get its detail info from DB.
 		session := sessions.Default(ctx)
-		result := session.Get(SESSION_USER_KEY)
+		result := session.Get(AUTH_ACCOUNT)
 		if result == nil {
 			ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, nil))
 			ctx.Abort()
 			return
 		}
-
-		account, err := db.GetAccountById(result.(int64))
-		if err != nil {
-			//response immediately whatever error occurs
-			ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
-			ctx.Abort()
-			return
-		}
-		ctx.Set(AUTH_ACCOUNT, account)
 		ctx.Next()
 	}
+}
+
+// Get User information from session
+func getAuthAccountFromSession(ctx *gin.Context) *db.AdminAccount {
+	auth, ok := ctx.Get(AUTH_ACCOUNT)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		return nil
+	}
+	account := auth.(*db.AdminAccount)
+	return account
 }
 
 //目前根据登录club账户直接获取对应club info
@@ -125,6 +128,7 @@ func getClubInfo(ctx *gin.Context) {
 
 func getAccountByUserId(ctx *gin.Context) {
 	account := getAuthAccountFromSession(ctx)
+
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -169,38 +173,15 @@ func listAccounts(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(accounts))
 }
 
-//authenticate user from session and returns the corresponding account info.
-func tryToGetAuthAccount(ctx *gin.Context) *db.AdminAccount {
-	//get user id from session to get its detail info from DB.
-	session := sessions.Default(ctx)
-	id := session.Get(SESSION_USER_KEY).(int64)
-	account, err := db.GetAccountById(id)
-	if err != nil {
-		//response immediately whatever error occurs
-		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
-		return nil
-	}
-	return account
+// Generate a new auth string
+func genAuthString() string {
+	h := sha512.New()
+	h.Write([]byte(uuid.New().String()))
+	str1 := hex.EncodeToString(h.Sum(nil))
+	h.Write([]byte(uuid.New().String()))
+	str2 := hex.EncodeToString(h.Sum(nil))
+	return str1 + str2
 }
-
-func getHash512HexString(buf string) string {
-	hasher := sha512.New()
-	hasher.Write([]byte(buf))
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-
-func getAuthAccountFromSession(ctx *gin.Context) *db.AdminAccount {
-	auth, ok := ctx.Get(AUTH_ACCOUNT)
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
-		ctx.Abort()
-		return nil
-	}
-	account := auth.(*db.AdminAccount)
-	return account
-}
-
 
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
@@ -210,14 +191,14 @@ func createNewClubAccount(ctx *gin.Context) {
 		return
 	}
 
-	authString := fmt.Sprintf("%s%s", getHash512HexString(uuid.New().String()), getHash512HexString(uuid.New().String()))
+	authString := genAuthString()
 
 	//construct account and club info
 	clubAccount := db.AdminAccount{
-		UserID: uuid.New().String(),
+		UserID:     uuid.New().String(),
 		AuthString: authString,
-		ClubID: uuid.New().String(),
-		IsAdmin: false,
+		ClubID:     uuid.New().String(),
+		IsAdmin:    false,
 	}
 	clubInfo := db.ClubInfo{
 		ClubID: clubAccount.ClubID,
@@ -251,21 +232,21 @@ func Pong(c *gin.Context) {
 		}))
 }
 
-type Token struct {
+type LoginPost struct {
 	AuthToken string `json:"auth_token"`
 }
 
 // Handles Admin Login
 func AdminLogin(c *gin.Context) {
-	token := new(Token)
-	if err := c.ShouldBindJSON(token); err != nil {
+	loginPost := new(LoginPost)
+	if err := c.ShouldBindJSON(loginPost); err != nil {
 		c.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
 		log.Print(err)
 		return
 	}
 
 	var AdminAccount db.AdminAccount
-	if err := db.DB.Where("auth_string = ?", token.AuthToken).First(&AdminAccount).Error; err != nil {
+	if err := db.DB.Where("auth_string = ?", loginPost.AuthToken).First(&AdminAccount).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
 		log.Print(err)
 		return
@@ -273,9 +254,9 @@ func AdminLogin(c *gin.Context) {
 
 	// Save the username in the session
 	session := sessions.Default(c)
-	session.Set(SESSION_USER_KEY, int64(AdminAccount.ID))
+	session.Set(AUTH_ACCOUNT, AdminAccount)
 	if err := session.Save(); err != nil {
-		c.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_SESSION_FAILED, nil))
+		c.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
 
@@ -294,7 +275,7 @@ func updateClubInfo(ctx *gin.Context) {
 
 	//get request params from json
 	var targetClub db.ClubInfo
-	if err := ctx.ShouldBindJSON(&targetClub);err != nil {
+	if err := ctx.ShouldBindJSON(&targetClub); err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
@@ -309,7 +290,7 @@ func updateClubInfo(ctx *gin.Context) {
 	removeDecreasedPics(sourceClub, &targetClub)
 
 	//update club info
-	if err = targetClub.Update();err != nil {
+	if err = targetClub.Update(); err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
