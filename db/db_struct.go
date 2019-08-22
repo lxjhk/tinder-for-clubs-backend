@@ -34,8 +34,8 @@ func GetAllAccounts() ([]AdminAccount, error) {
 }
 
 func GetAccountByUserId(userId string) (*AdminAccount, error) {
-	var account *AdminAccount
-	return account, DB.Where("user_id = ?", userId).First(account).Error
+	var account AdminAccount
+	return &account, DB.Where("user_id = ?", userId).First(&account).Error
 }
 
 // Admin Account Login History
@@ -81,11 +81,11 @@ func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 }
 
 func (ci *ClubInfo) Update() error {
-	return DB.Model(&ClubInfo{}).Where("club_uuid = ?", ci.ID).Updates(*ci).Error
+	return DB.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
 }
 
 func (ci *ClubInfo) UpdateAllPicIds() error {
-	return DB.Model(&ClubInfo{}).Where("club_uuid = ?", ci.ID).UpdateColumns(ClubInfo{
+	return DB.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).Updates(ClubInfo{
 		Pic1ID: ci.Pic1ID,
 		Pic2ID: ci.Pic2ID,
 		Pic3ID: ci.Pic3ID,
@@ -119,7 +119,7 @@ func SelectClubTags() ([]ClubTags, error) {
 
 type ClubTagRelationship struct {
 	gorm.Model
-	ClubUUID string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	ClubID string `gorm:"type:varchar(40);unique_index:uni_tag"`
 	TagID    string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
@@ -128,5 +128,5 @@ func (cr *ClubTagRelationship) Insert() error {
 }
 
 func (cr *ClubTagRelationship) Update() error {
-	return DB.Model(&ClubTagRelationship{}).Where("club_uuid = ? and tag_id = ?", cr.ClubUUID, cr.TagID).UpdateColumns(*cr).Error
+	return DB.Model(&ClubTagRelationship{}).Where("club_id = ? and tag_id = ?", cr.ClubID, cr.TagID).UpdateColumns(*cr).Error
 }

@@ -60,13 +60,20 @@ func initializeRoutes() {
 	//For admin to manage account
 	router.POST("/account/create", createNewClubAccount)
 	router.GET("/account/list", listAccounts)
-	router.GET("/account/get/:userId",getAccount)
+	router.GET("/account/get",getLoginAccount)
+	router.GET("/account/get/:userId", getAccountByUserId)
 
 	//For club account to upload picture and update club info.
 	router.POST("/clubInfo/uploadOne", uploadSinglePicture)
 	router.POST("/clubInfo/update", updateClubInfo)
 	router.GET("/clubInfo/get", getClubInfo)
 
+
+}
+
+func getLoginAccount(ctx *gin.Context) {
+	account := getAuthAccountFromSession(ctx)
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
 func authInterceptor() gin.HandlerFunc {
@@ -116,7 +123,7 @@ func getClubInfo(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfo))
 }
 
-func getAccount(ctx *gin.Context) {
+func getAccountByUserId(ctx *gin.Context) {
 	account := getAuthAccountFromSession(ctx)
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
@@ -130,6 +137,10 @@ func getAccount(ctx *gin.Context) {
 
 	userId := ctx.Param("userId")
 	account, err := db.GetAccountByUserId(userId)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NOT_FOUND, nil))
+		return
+	}
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
@@ -183,6 +194,7 @@ func getAuthAccountFromSession(ctx *gin.Context) *db.AdminAccount {
 	auth, ok := ctx.Get(AUTH_ACCOUNT)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		ctx.Abort()
 		return nil
 	}
 	account := auth.(*db.AdminAccount)
@@ -280,6 +292,7 @@ func updateClubInfo(ctx *gin.Context) {
 		return
 	}
 
+	//get request params from json
 	var targetClub db.ClubInfo
 	if err := ctx.ShouldBindJSON(&targetClub);err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
@@ -292,6 +305,9 @@ func updateClubInfo(ctx *gin.Context) {
 		return
 	}
 
+	//removes decreased pic info of target club
+	removeDecreasedPics(sourceClub, &targetClub)
+
 	//update club info
 	if err = targetClub.Update();err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -299,6 +315,58 @@ func updateClubInfo(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+}
+
+//Removes pictures that account user uploaded but not present in target club info.
+func removeDecreasedPics(sourceClub , targetClub *db.ClubInfo) {
+	sourceList := getPicList(sourceClub)
+	targetList := getPicList(targetClub)
+
+	//removes pic that has been decreased from target list
+	if len(targetList) < len(sourceList) {
+		for _, source := range sourceList {
+			var existInTarget bool
+			//check if source pic exists in target pic list
+			for _, target :=range targetList {
+				if source == target {
+					existInTarget = true
+					break
+				}
+			}
+
+			//pic has been removed by account user
+			if !existInTarget {
+				removePicIfExist(source)
+			}
+		}
+	}
+}
+
+//get pic list of given club
+func getPicList(clubInfo *db.ClubInfo) []string {
+	picList := make([]string, 0)
+	if clubInfo == nil {
+		return picList
+	}
+	if clubInfo.Pic1ID != "" {
+		picList = append(picList, clubInfo.Pic1ID)
+	}
+	if clubInfo.Pic2ID != "" {
+		picList = append(picList, clubInfo.Pic2ID)
+	}
+	if clubInfo.Pic3ID != "" {
+		picList = append(picList, clubInfo.Pic3ID)
+	}
+	if clubInfo.Pic4ID != "" {
+		picList = append(picList, clubInfo.Pic4ID)
+	}
+	if clubInfo.Pic5ID != "" {
+		picList = append(picList, clubInfo.Pic5ID)
+	}
+	if clubInfo.Pic6ID != "" {
+		picList = append(picList, clubInfo.Pic6ID)
+	}
+	return picList
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
@@ -332,7 +400,7 @@ func uploadSinglePicture(ctx *gin.Context) {
 		return
 	}
 	extName := path.Ext(file.Filename)
-	picUid := fmt.Sprintf("%s.%s", uuid.New().String(), extName)
+	picUid := fmt.Sprintf("%s%s", uuid.New().String(), extName)
 	err = ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, picUid))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_PICTURE_FAILED, nil))
@@ -383,7 +451,7 @@ func uploadSinglePicture(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(picUid))
 }
 
 func removePicIfExist(picName string) {
