@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"github.com/gin-contrib/secure"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/memstore"
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,14 @@ func main() {
 
 	// Initialise HTTP framework and Session Store
 	router = gin.Default()
+
+	// Disable inline scripts
+	router.Use(secure.New(secure.Config{
+		ContentSecurityPolicy: "default-src 'self'",
+	}))
+
+	router.Use(CORSMiddleware())
+
 	store := memstore.NewStore([]byte(uuid.New().String()))
 	router.Use(sessions.Sessions("AdminSession", store))
 
@@ -49,6 +58,24 @@ func main() {
 
 func registerObjToGob() {
 	gob.Register(db.AdminAccount{})
+}
+
+
+// CORS allow domains so that we can serve the website from different subdomains.
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }
 
 func initializeRoutes() {
@@ -73,7 +100,6 @@ func initializeRoutes() {
 	// Public endpoints
 	// TODO router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
 }
-
 
 // Get User information from request context.
 func getUser(ctx *gin.Context) (*db.AdminAccount, error) {
@@ -180,7 +206,7 @@ func createNewClubAccount(ctx *gin.Context) {
 		IsAdmin:    false,
 	}
 
-	clubInfo := db.ClubInfo {
+	clubInfo := db.ClubInfo{
 		ClubID: clubAccount.ClubID,
 	}
 
