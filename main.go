@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha512"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"github.com/gin-contrib/sessions"
@@ -44,8 +45,13 @@ func main() {
 	router.Use(sessions.Sessions("AdminSession", store))
 
 	initializeRoutes()
+	registerObjToGob()
 	err := router.Run() // listen and serve on 0.0.0.0:8080
 	common.ErrFatalLog(err)
+}
+
+func registerObjToGob() {
+	gob.Register(db.AdminAccount{})
 }
 
 func initializeRoutes() {
@@ -73,7 +79,7 @@ func initializeRoutes() {
 }
 
 func getLoginAccount(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
@@ -86,7 +92,7 @@ func authInterceptor() gin.HandlerFunc {
 			return
 		}
 
-		//get user id from session to get its detail info from DB.
+		//get user from session.
 		session := sessions.Default(ctx)
 		result := session.Get(AUTH_ACCOUNT)
 		if result == nil {
@@ -94,24 +100,26 @@ func authInterceptor() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
+		//save user to request context.
+		ctx.Set(AUTH_ACCOUNT, result)
 		ctx.Next()
 	}
 }
 
-// Get User information from session
-func getAuthAccountFromSession(ctx *gin.Context) *db.AdminAccount {
+// Get User information from request context.
+func getAuthAccountFromReqContext(ctx *gin.Context) *db.AdminAccount {
 	auth, ok := ctx.Get(AUTH_ACCOUNT)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
 		return nil
 	}
-	account := auth.(*db.AdminAccount)
-	return account
+	account := auth.(db.AdminAccount)
+	return &account
 }
 
 //目前根据登录club账户直接获取对应club info
 func getClubInfo(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 
 	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
 	if gorm.IsRecordNotFoundError(err) {
@@ -127,7 +135,7 @@ func getClubInfo(ctx *gin.Context) {
 }
 
 func getAccountByUserId(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
@@ -153,7 +161,7 @@ func getAccountByUserId(ctx *gin.Context) {
 }
 
 func listAccounts(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -185,7 +193,7 @@ func genAuthString() string {
 
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -265,7 +273,7 @@ func AdminLogin(c *gin.Context) {
 
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 	//get the source club info from DB.
 	sourceClub, err := db.GetClubInfoByClubId(account.ClubID)
 	if err != nil {
@@ -351,7 +359,7 @@ func getPicList(clubInfo *db.ClubInfo) []string {
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
-	account := getAuthAccountFromSession(ctx)
+	account := getAuthAccountFromReqContext(ctx)
 
 	pid := ctx.Query("pid")
 	if !(pid == "1" || pid == "2" || pid == "3" || pid == "4" || pid == "5" || pid == "6") {
