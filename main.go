@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/gin-contrib/secure"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/memstore"
@@ -14,6 +15,8 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"path"
+	"strings"
 	"tinder-for-clubs-backend/common"
 	"tinder-for-clubs-backend/config"
 	"tinder-for-clubs-backend/db"
@@ -60,7 +63,6 @@ func registerObjToGob() {
 	gob.Register(db.AdminAccount{})
 }
 
-
 // CORS allow domains so that we can serve the website from different subdomains.
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -82,7 +84,7 @@ func initializeRoutes() {
 	//Ping endpoint for testing
 	router.GET("/ping", Pong)
 
-	//For admin and club users to login
+	//For admin and club managers to login
 	router.POST("/login", Login)
 
 	// Admin only endpoints
@@ -98,7 +100,11 @@ func initializeRoutes() {
 	// TODO router.GET("/club/tags", getTags)
 
 	// Public endpoints
-	// TODO router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+}
+
+func serveStaticPicture(ctx *gin.Context) {
+
 }
 
 // Get User information from request context.
@@ -115,7 +121,7 @@ func getUser(ctx *gin.Context) (*db.AdminAccount, error) {
 	return &user, nil
 }
 
-// 目前根据登录club账户直接获取对应club info
+// Returns the club info of current login user.
 func getClubInfo(ctx *gin.Context) {
 	account, err := getUser(ctx)
 	if err != nil {
@@ -200,7 +206,7 @@ func createNewClubAccount(ctx *gin.Context) {
 
 	//construct account and club info
 	clubAccount := db.AdminAccount{
-		UserID:     uuid.New().String(),
+		AccountID:  uuid.New().String(),
 		AuthString: genAuthString(),
 		ClubID:     uuid.New().String(),
 		IsAdmin:    false,
@@ -271,6 +277,19 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, httpserver.SuccessResponse(Account))
 }
 
+type updateClubInfoRequest struct {
+	ClubID      string `json:"club_id" binding:"required"`
+	Name        string `json:"name"`
+	Website     string `json:"website"`
+	Email       string `json:"email"`
+	GroupLink   string `json:"group_link"`
+	VideoLink   string `json:"video_link"`
+	Published   bool   `json:"published"`
+	Description string `json:"description"`
+	Tags        []string `json:"tags"`
+	PictureIds   []string `json:"picture_ids"`
+}
+
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
 	account, err := getUser(ctx)
@@ -322,88 +341,58 @@ func uploadSinglePicture(ctx *gin.Context) {
 	}
 
 	_ = account
+	//get multipart file from the multipart form data.
+	multipart, err := ctx.MultipartForm()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	//returns error when not one picture.
+	files := multipart.File["image"]
+	if len(files) > 1 || len(files) == 0 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_NUM_NOT_SUPPORTED, nil))
+		return
+	}
+
+	//ensures what uploaded is a picture
+	file := files[0]
+	fileType := file.Header.Get("Content-Type")
+	if !strings.HasPrefix(fileType, "image") {
+		log.Error(err)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.UPLOAD_TYPE_NOT_SUPPORTED, nil))
+		return
+	}
+
+	//All is detected, save picture info into db,
+	// rolls back DB transaction when fails to save picture to the disk.
+	picture := db.AccountPicture{
+		AccountID:   account.AccountID,
+		PictureID:   uuid.New().String(),
+		PictureName: uuid.New().String() + path.Ext(file.Filename),
+	}
+
+	txDb := db.DB.Begin()
+	err = picture.Insert(txDb)
+	if err != nil {
+		log.Error(err)
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//save picture to disk
+	err = ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, picture.PictureName))
+	if err != nil {
+		log.Error(err)
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	txDb.Commit()
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(picture.PictureID))
 
 	// TODO 接受上传的图片，检查图片（尺寸和大小—），成功并且返回 Picture ID, Add to DB [userID, PictureID, PictureNameOnDisk]
 	// TODO PictureID = UUID  NAME = {UUID}.jpg
-
-	//pid := ctx.Query("pid")
-	//if !(pid == "1" || pid == "2" || pid == "3" || pid == "4" || pid == "5" || pid == "6") {
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-	//	return
-	//}
-	//
-	////get multipart file from the multipart form data.
-	//multipart, err := ctx.MultipartForm()
-	//if err != nil {
-	//	log.WithFields(log.Fields{"event": "uploadPicture"}).Error(err)
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-	//	return
-	//}
-	////returns error when not one picture.
-	//files := multipart.File["image"]
-	//if len(files) > 1 || len(files) == 0 {
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_NUM_NOT_SUPPORTED, nil))
-	//	return
-	//}
-	//
-	////ensures what uploaded is a picture and save it to specified path.
-	//file := files[0]
-	//fileType := file.Header.Get("Content-Type")
-	//if !strings.HasPrefix(fileType, "image") {
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.UPLOAD_TYPE_NOT_SUPPORTED, nil))
-	//	return
-	//}
-	//extName := path.Ext(file.Filename)
-	//picUid := fmt.Sprintf("%s%s", uuid.New().String(), extName)
-	//err = ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, picUid))
-	//if err != nil {
-	//	ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_PICTURE_FAILED, nil))
-	//	return
-	//}
-	//
-	////get the source club info from DB.
-	//clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
-	//if err != nil {
-	//	ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-	//	return
-	//}
-	//
-	////ensures the source picture has been removed when set the target picture
-	//switch pid {
-	//case "1":
-	//	removePicIfExist(clubInfo.Pic1ID)
-	//	clubInfo.Pic1ID = picUid
-	//	break
-	//case "2":
-	//	removePicIfExist(clubInfo.Pic2ID)
-	//	clubInfo.Pic2ID = picUid
-	//	break
-	//case "3":
-	//	removePicIfExist(clubInfo.Pic3ID)
-	//	clubInfo.Pic3ID = picUid
-	//	break
-	//case "4":
-	//	removePicIfExist(clubInfo.Pic4ID)
-	//	clubInfo.Pic4ID = picUid
-	//	break
-	//case "5":
-	//	removePicIfExist(clubInfo.Pic5ID)
-	//	clubInfo.Pic5ID = picUid
-	//	break
-	//case "6":
-	//	removePicIfExist(clubInfo.Pic6ID)
-	//	clubInfo.Pic6ID = picUid
-	//	break
-	//}
-	//
-	////update the picture info of current club to the latest.
-	//err = clubInfo.UpdateAllPicIds()
-	//if err != nil {
-	//	//remove the uploaded picture when error
-	//	removePicIfExist(picUid)
-	//	ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-	//	return
-	//}
-	//
-	//ctx.JSON(http.StatusOK, httpserver.SuccessResponse(picUid))
 }

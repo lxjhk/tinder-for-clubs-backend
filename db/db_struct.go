@@ -8,7 +8,7 @@ import (
 // Admin Accounts
 type AdminAccount struct {
 	gorm.Model
-	UserID     string `gorm:"type:varchar(40);unique_index" json:"user_id"`
+	AccountID     string `gorm:"type:varchar(40);unique_index" json:"account_id"`
 	AuthString string `gorm:"type:varchar(256);"            json:"auth_string"`
 	ClubID     string `gorm:"type:varchar(40);"             json:"club_id"`
 	// For managers of Tinder for Clubs
@@ -20,7 +20,7 @@ func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
 }
 
 func (ac *AdminAccount) Update() error {
-	return DB.Model(&AdminAccount{}).Where("user_id = ?", ac.UserID).Updates(*ac).Error
+	return DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).Updates(*ac).Error
 }
 
 func GetAccountById(id int64) (*AdminAccount, error) {
@@ -62,6 +62,8 @@ type ClubInfo struct {
 	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
 	Description string `gorm:"type:varchar(4000);" json:"description"`
 
+	PictureIds  string `gorm:"type:varchar(500)"`
+
 	// Stores the ID of the pictures. The first picture will also be the cover photo
 	Pic1ID string `gorm:"type:varchar(500);" json:"pic1_id"`
 	Pic2ID string `gorm:"type:varchar(500);" json:"pic2_id"`
@@ -69,6 +71,32 @@ type ClubInfo struct {
 	Pic4ID string `gorm:"type:varchar(500);" json:"pic4_id"`
 	Pic5ID string `gorm:"type:varchar(500);" json:"pic5_id"`
 	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
+}
+
+// Account pictures uploaded
+type AccountPicture struct {
+	gorm.Model
+	AccountID string `gorm:"type:varchar(40);unique_index"  json:"account_id"`
+	PictureID string `gorm:"type:varchar(40);unique_index"  json:"picture_id"`
+	PictureName string `gorm:"type:varchar(60)"  json:"picture_name"`
+}
+
+func (ap *AccountPicture) Insert(txDb *gorm.DB) error {
+	return txDb.Create(ap).Error
+}
+
+func getPictureNameById(pictureId string) (string, error) {
+	var picture AccountPicture
+	err := DB.Where("picture_id = ?", pictureId).First(&picture).Error
+	if err != nil {
+		return "", err
+	}
+	return picture.PictureName, nil
+}
+
+func GetAccountPicturesByPictureIds(accountId string, ids []string) ([]AccountPicture, error) {
+	pictures := make([]AccountPicture, 0)
+	return pictures, DB.Where("account_id = ?", accountId).Find(&pictures).Error
 }
 
 func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
