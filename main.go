@@ -96,11 +96,27 @@ func initializeRoutes() {
 	//TODO: router.GET("/account", getUser)
 	router.POST("/club/uploadpicture", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
-	router.GET("/club/info", getClubInfo)
-	// TODO router.GET("/club/tags", getTags)
+	router.GET("/club/info", getClubInfo) //TODO 修改响应值
+	router.GET("/club/tags", getTags)
 
 	// Public endpoints
-	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+	//TODO router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+}
+
+func getTags(ctx *gin.Context) {
+	_, err := getUser(ctx)
+	if err != nil {
+		return
+	}
+
+	tags, err := db.GetAllClubTags()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(tags))
 }
 
 func serveStaticPicture(ctx *gin.Context) {
@@ -277,18 +293,42 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, httpserver.SuccessResponse(Account))
 }
 
-type updateClubInfoRequest struct {
-	ClubID      string `json:"club_id" binding:"required"`
-	Name        string `json:"name"`
-	Website     string `json:"website"`
-	Email       string `json:"email"`
-	GroupLink   string `json:"group_link"`
-	VideoLink   string `json:"video_link"`
-	Published   bool   `json:"published"`
-	Description string `json:"description"`
-	Tags        []string `json:"tags"`
-	PictureIds   []string `json:"picture_ids"`
+type UpdateClubInfoRequest struct {
+	ClubID      string   `json:"club_id" binding:"required"`
+	Name        string   `json:"name"`
+	Website     string   `json:"website"`
+	Email       string   `json:"email"`
+	GroupLink   string   `json:"group_link"`
+	VideoLink   string   `json:"video_link"`
+	Published   bool     `json:"published"`
+	Description string   `json:"description"`
+	TagIds      []string `json:"tag_ids"`
+	PictureIds  []string `json:"picture_ids"`
 }
+
+type UpdateClubInfoResponse struct {
+	ClubID      string        `json:"club_id" binding:"required"`
+	Name        string        `json:"name"`
+	Website     string        `json:"website"`
+	Email       string        `json:"email"`
+	GroupLink   string        `json:"group_link"`
+	VideoLink   string        `json:"video_link"`
+	Published   bool          `json:"published"`
+	Description string        `json:"description"`
+	Tags        []TagResponse `json:"tags"`
+	PictureIds  []string      `json:"picture_ids"`
+}
+
+type TagResponse struct {
+	TagID string `json:"tag_id"`
+	Tag   string `json:"tag"`
+}
+
+const (
+	CLUB_NAME_MAX_LEN = 50
+	CLUB_PIC_MAX_NUM  = 6
+	CLUB_TAG_MAX_NUM  = 8
+)
 
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
@@ -297,41 +337,117 @@ func updateClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	_ = account
+	//obtain and check request params
+	var clubInfoReq UpdateClubInfoRequest
+	if err := ctx.ShouldBindJSON(&clubInfoReq); err != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if len(clubInfoReq.Name) == 0 || len(clubInfoReq.Name) > CLUB_NAME_MAX_LEN {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if len(clubInfoReq.PictureIds) > CLUB_PIC_MAX_NUM {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.CLUB_PIC_NUM_ABOVE_LIMIT, nil))
+		return
+	}
+	if len(clubInfoReq.TagIds) > CLUB_TAG_MAX_NUM {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.CLUB_TAG_NUM_ABOVE_LIMIT, nil))
+		return
+	}
+	//TODO check the params rest
 
-	// TODO 拿到 Tag List， 拿到 Picture ID List， 检查是否存在数据库
-	// TODO If 都存在 OK， 任何的不存在， 直接返回错误
+	//account user selected club tags
+	if len(clubInfoReq.TagIds) > 0 {
+		tags, err := db.GetClubTagsByTagIds(clubInfoReq.TagIds)
+		if err != nil {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
+		//invalid tag ids
+		if len(clubInfoReq.TagIds) != len(tags) {
+			ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+			return
+		}
+	}
 
-	////get the source club info from DB.
-	//sourceClub, err := db.GetClubInfoByClubId(account.ClubID)
-	//if err != nil {
-	//	ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-	//	return
-	//}
-	//
-	////get request params from json
-	//var targetClub db.ClubInfo
-	//if err := ctx.ShouldBindJSON(&targetClub); err != nil {
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-	//	return
-	//}
-	//
-	////ensures user is updating his own club
-	//if sourceClub.ClubID != targetClub.ClubID {
-	//	ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
-	//	return
-	//}
-	//
-	////removes decreased pic info of target club
-	//removeDecreasedPics(sourceClub, &targetClub)
-	//
-	////update club info
-	//if err = targetClub.Update(); err != nil {
-	//	ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-	//	return
-	//}
-	//
-	//ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+	//account user uploaded pictures
+	if len(clubInfoReq.PictureIds) > 0 {
+		pictures, err := db.GetAccountPicturesByPictureIds(account.AccountID, clubInfoReq.PictureIds)
+		if err != nil {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
+		//invalid picture ids
+		if len(clubInfoReq.PictureIds) != len(pictures) {
+			ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+			return
+		}
+	}
+
+	//construct club info and update it into DB
+	clubInfo := db.ClubInfo{
+		ClubID:      clubInfoReq.ClubID,
+		Name:        clubInfoReq.Name,
+		Website:     clubInfoReq.Website,
+		Email:       clubInfoReq.Email,
+		GroupLink:   clubInfoReq.GroupLink,
+		VideoLink:   clubInfoReq.VideoLink,
+		Published:   clubInfoReq.Published,
+		Description: clubInfoReq.Description,
+		PictureIds:  strings.Join(clubInfoReq.PictureIds, " "),
+	}
+	txDb := db.DB.Begin()
+	err = clubInfo.Update(txDb)
+	if err != nil {
+		log.Error(err)
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//update club tags relationship
+	if len(clubInfoReq.TagIds) > 0 {
+		//remove abandoned club tags first
+		err := db.DeleteAbandonedRelationshipsByClubId(txDb, clubInfoReq.ClubID, clubInfoReq.TagIds)
+		if err != nil {
+			log.Error(err)
+			txDb.Rollback()
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
+		//then insert latest relationship
+		for _, tagId := range clubInfoReq.TagIds {
+			relationship := db.ClubTagRelationship{
+				ClubID: clubInfo.ClubID,
+				TagID:  tagId,
+			}
+			err := relationship.Insert(txDb)
+			if isDuplicateEntryErr(err) {
+				continue
+			}
+			if err != nil {
+				log.Error(err)
+				txDb.Rollback()
+				ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+				return
+			}
+		}
+	}
+
+	txDb.Commit()
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+}
+
+const DuplicateEntry = "Duplicate entry"
+
+func isDuplicateEntryErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), DuplicateEntry)
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
@@ -340,7 +456,6 @@ func uploadSinglePicture(ctx *gin.Context) {
 		return
 	}
 
-	_ = account
 	//get multipart file from the multipart form data.
 	multipart, err := ctx.MultipartForm()
 	if err != nil {
@@ -348,6 +463,7 @@ func uploadSinglePicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
+
 	//returns error when not one picture.
 	files := multipart.File["image"]
 	if len(files) > 1 || len(files) == 0 {
@@ -371,7 +487,6 @@ func uploadSinglePicture(ctx *gin.Context) {
 		PictureID:   uuid.New().String(),
 		PictureName: uuid.New().String() + path.Ext(file.Filename),
 	}
-
 	txDb := db.DB.Begin()
 	err = picture.Insert(txDb)
 	if err != nil {
@@ -392,7 +507,4 @@ func uploadSinglePicture(ctx *gin.Context) {
 	txDb.Commit()
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(picture.PictureID))
-
-	// TODO 接受上传的图片，检查图片（尺寸和大小—），成功并且返回 Picture ID, Add to DB [userID, PictureID, PictureNameOnDisk]
-	// TODO PictureID = UUID  NAME = {UUID}.jpg
 }

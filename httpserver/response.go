@@ -20,15 +20,14 @@ var NOT_AUTHORIZED = ResponseCode{Code: 3001, Message: "Not authorized!"}
 
 var SYSTEM_ERROR = ResponseCode{Code: 5000, Message: "Server internal error!"}
 var AUTH_FAILED = ResponseCode{Code: 5001, Message: "Authentication Failed!"}
-var SAVE_SESSION_FAILED = ResponseCode{Code: 5002, Message: "Failed to save session!"}
-var SAVE_PICTURE_FAILED = ResponseCode{Code: 5003, Message: "Failed to save picture!"}
-var NOT_FOUND = ResponseCode{Code: 5004, Message: "Data not found!"}
+var NOT_FOUND = ResponseCode{Code: 5002, Message: "Not found!"}
 
 
 var INVALID_PARAMS = ResponseCode{Code: 4000, Message: "Invalid parameters!"}
 var PIC_NUM_NOT_SUPPORTED = ResponseCode{Code: 4001, Message: "Picture number uploaded not supported!"}
-var UPLOAD_TYPE_NOT_SUPPORTED = ResponseCode{Code: 4001, Message: "Only support picture upload!"}
-
+var UPLOAD_TYPE_NOT_SUPPORTED = ResponseCode{Code: 4002, Message: "Only support picture upload!"}
+var CLUB_PIC_NUM_ABOVE_LIMIT = ResponseCode{Code: 4003, Message: "Club picture number above max limit!"}
+var CLUB_TAG_NUM_ABOVE_LIMIT = ResponseCode{Code: 4004, Message: "Club tag number above max limit!"}
 
 func ConstructResponse(code ResponseCode, payload interface{}) Response {
 	return Response{code, payload}

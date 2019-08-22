@@ -108,8 +108,8 @@ func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 	return clubInfo, DB.Where("club_id = ?", id).Find(clubInfo).Error
 }
 
-func (ci *ClubInfo) Update() error {
-	return DB.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
+func (ci *ClubInfo) Update(txDb *gorm.DB) error {
+	return txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
 }
 
 func (ci *ClubInfo) UpdateAllPicIds() error {
@@ -136,11 +136,16 @@ type ClubTags struct {
 	Tag   string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
+func GetClubTagsByTagIds(ids []string) ([]ClubTags, error) {
+	tags := make([]ClubTags, 0)
+	return tags, DB.Where("tag_id in (?)",ids).Find(&tags).Error
+}
+
 func (ct *ClubTags) Insert() error {
 	return DB.Create(&ct).Error
 }
 
-func SelectClubTags() ([]ClubTags, error) {
+func GetAllClubTags() ([]ClubTags, error) {
 	tags := make([]ClubTags, 0)
 	return tags, DB.Find(&tags).Error
 }
@@ -151,10 +156,10 @@ type ClubTagRelationship struct {
 	TagID    string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
-func (cr *ClubTagRelationship) Insert() error {
-	return DB.Create(&cr).Error
+func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
+	return txDb.Create(&cr).Error
 }
 
-func (cr *ClubTagRelationship) Update() error {
-	return DB.Model(&ClubTagRelationship{}).Where("club_id = ? and tag_id = ?", cr.ClubID, cr.TagID).UpdateColumns(*cr).Error
+func DeleteAbandonedRelationshipsByClubId(txDb *gorm.DB, clubId string,tagIds []string) error {
+	return txDb.Where("clubId = ? and tag_id not in (?)", clubId, tagIds).Delete(&ClubTagRelationship{}).Error
 }
