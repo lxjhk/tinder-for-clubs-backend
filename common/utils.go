@@ -7,3 +7,4 @@ func ErrFatalLog(err error) {
 		log.Fatal(err)
 	}
 }
+
