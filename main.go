@@ -26,7 +26,7 @@ var router *gin.Engine
 var globalConfig config.GlobalConfiguration
 
 const (
-	AUTH_ACCOUNT = "AUTH_ACCOUNT"
+	USER = "USER"
 )
 
 func main() {
@@ -62,53 +62,46 @@ func initializeRoutes() {
 	router.GET("/ping", Pong)
 
 	//For admin and club users to login
-	router.POST("/admin/login", AdminLogin)
+	router.POST("/login", AdminLogin)
 
-	//For admin to manage account
+	// Admin only endpoints
 	router.POST("/admin/account/create", createNewClubAccount)
-	router.GET("/admin/account/list", listAccounts)
-	router.GET("/admin/account/get",getLoginAccount)
-	router.GET("/admin/account/get/:userId", getAccountByUserId)
+	router.GET("/admin/account/all", listAccounts)
+	router.GET("/admin/account/:userId", getAccountByUserId)
 
-	//For club account to upload picture and update club info.
-	router.POST("/admin/clubInfo/uploadOne", uploadSinglePicture)
-	router.POST("/admin/clubInfo/update", updateClubInfo)
-	router.GET("/admin/clubInfo/get", getClubInfo)
-
-
-}
-
-func getLoginAccount(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
+	// Club manager endpoints
+	router.GET("/account",getLoginAccount)
+	router.POST("/club/uploadpicture", uploadSinglePicture)
+	router.POST("/club/info", updateClubInfo)
+	router.GET("/club/info", getClubInfo)
 }
 
 func authInterceptor() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		//user is signing in
 		url := ctx.Request.RequestURI
-		if "/admin/login" == url {
+		if "/login" == url {
 			ctx.Next()
 			return
 		}
 
 		//get user from session.
 		session := sessions.Default(ctx)
-		result := session.Get(AUTH_ACCOUNT)
+		result := session.Get(USER)
 		if result == nil {
 			ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, nil))
 			ctx.Abort()
 			return
 		}
 		//save user to request context.
-		ctx.Set(AUTH_ACCOUNT, result)
+		ctx.Set(USER, result)
 		ctx.Next()
 	}
 }
 
 // Get User information from request context.
-func getAuthAccountFromReqContext(ctx *gin.Context) *db.AdminAccount {
-	auth, ok := ctx.Get(AUTH_ACCOUNT)
+func getUserAcc(ctx *gin.Context) *db.AdminAccount {
+	auth, ok := ctx.Get(USER)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
 		return nil
@@ -116,10 +109,15 @@ func getAuthAccountFromReqContext(ctx *gin.Context) *db.AdminAccount {
 	account := auth.(db.AdminAccount)
 	return &account
 }
+func getLoginAccount(ctx *gin.Context) {
+	account := getUserAcc(ctx)
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
+}
+
 
 //目前根据登录club账户直接获取对应club info
 func getClubInfo(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 
 	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
 	if gorm.IsRecordNotFoundError(err) {
@@ -135,7 +133,7 @@ func getClubInfo(ctx *gin.Context) {
 }
 
 func getAccountByUserId(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
@@ -161,7 +159,7 @@ func getAccountByUserId(ctx *gin.Context) {
 }
 
 func listAccounts(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -193,7 +191,7 @@ func genAuthString() string {
 
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -262,7 +260,7 @@ func AdminLogin(c *gin.Context) {
 
 	// Save the username in the session
 	session := sessions.Default(c)
-	session.Set(AUTH_ACCOUNT, AdminAccount)
+	session.Set(USER, AdminAccount)
 	if err := session.Save(); err != nil {
 		c.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
@@ -273,7 +271,7 @@ func AdminLogin(c *gin.Context) {
 
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 	//get the source club info from DB.
 	sourceClub, err := db.GetClubInfoByClubId(account.ClubID)
 	if err != nil {
@@ -359,7 +357,7 @@ func getPicList(clubInfo *db.ClubInfo) []string {
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
-	account := getAuthAccountFromReqContext(ctx)
+	account := getUserAcc(ctx)
 
 	pid := ctx.Query("pid")
 	if !(pid == "1" || pid == "2" || pid == "3" || pid == "4" || pid == "5" || pid == "6") {
