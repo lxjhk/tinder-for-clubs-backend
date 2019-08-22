@@ -9,8 +9,8 @@ import (
 type AdminAccount struct {
 	gorm.Model
 	UserID     string `gorm:"type:varchar(40);unique_index" json:"user_id"`
-	AuthString string `gorm:"type:varchar(256);unique_index" json:"auth_string"`
-	ClubID     string `gorm:"type:varchar(40);" json:"club_id"`
+	AuthString string `gorm:"type:varchar(256);"            json:"auth_string"`
+	ClubID     string `gorm:"type:varchar(40);"             json:"club_id"`
 	// For managers of Tinder for Clubs
 	IsAdmin bool `gorm:"type:tinyint(1);" json:"is_admin"`
 }
@@ -20,7 +20,7 @@ func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
 }
 
 func (ac *AdminAccount) Update() error {
-	return DB.Model(&AdminAccount{}).Where("user_id = ?",ac.UserID).Updates(*ac).Error
+	return DB.Model(&AdminAccount{}).Where("user_id = ?", ac.UserID).Updates(*ac).Error
 }
 
 func GetAccountById(id int64) (*AdminAccount, error) {
@@ -52,23 +52,23 @@ type LoginHistory struct {
 // Club Information
 type ClubInfo struct {
 	gorm.Model
-	ClubID    string `gorm:"type:varchar(40);unique_index" json:"club_id" binding:"required"`
-	Name      string `gorm:"not null;type:varchar(1000);" json:"name"`
-	Website   string `gorm:"type:varchar(500);" json:"website"`
-	Email     string `gorm:"type:varchar(500);" json:"email"`
-	GroupLink string `gorm:"type:varchar(500);" json:"group_link"`
-	VideoLink string `gorm:"type:varchar(500);" json:"video_link"`
+	ClubID    string `gorm:"type:varchar(40);unique_index"  json:"club_id" binding:"required"`
+	Name      string `gorm:"not null;type:varchar(1000);"   json:"name"`
+	Website   string `gorm:"type:varchar(500);"             json:"website"`
+	Email     string `gorm:"type:varchar(500);"             json:"email"`
+	GroupLink string `gorm:"type:varchar(500);"             json:"group_link"`
+	VideoLink string `gorm:"type:varchar(500);"             json:"video_link"`
 	// Whether the club is viewable
 	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
-	Description string `gorm:"type:varchar(5000);" json:"description"`
+	Description string `gorm:"type:varchar(4000);" json:"description"`
 
 	// Stores the ID of the pictures. The first picture will also be the cover photo
-	Pic1ID string `gorm:"type:varchar(100);" json:"pic1_id"`
-	Pic2ID string `gorm:"type:varchar(100);" json:"pic2_id"`
-	Pic3ID string `gorm:"type:varchar(100);" json:"pic3_id"`
-	Pic4ID string `gorm:"type:varchar(100);" json:"pic4_id"`
-	Pic5ID string `gorm:"type:varchar(100);" json:"pic5_id"`
-	Pic6ID string `gorm:"type:varchar(100);" json:"pic6_id"`
+	Pic1ID string `gorm:"type:varchar(500);" json:"pic1_id"`
+	Pic2ID string `gorm:"type:varchar(500);" json:"pic2_id"`
+	Pic3ID string `gorm:"type:varchar(500);" json:"pic3_id"`
+	Pic4ID string `gorm:"type:varchar(500);" json:"pic4_id"`
+	Pic5ID string `gorm:"type:varchar(500);" json:"pic5_id"`
+	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
 }
 
 func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
@@ -104,8 +104,8 @@ type UserList struct {
 
 type ClubTags struct {
 	gorm.Model
-	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
-	Tag string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	TagID string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	Tag   string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
 func (ct *ClubTags) Insert() error {
