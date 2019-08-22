@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/memstore"
@@ -24,6 +26,7 @@ var globalConfig config.GlobalConfiguration
 
 const (
 	SESSION_USER_KEY = "SESSION_USER_KEY"
+	AUTH_ACCOUNT = "AUTH_ACCOUNT"
 )
 
 func main() {
@@ -40,6 +43,9 @@ func main() {
 	router = gin.Default()
 	store := memstore.NewStore([]byte(uuid.New().String()))
 	router.Use(sessions.Sessions("AdminSession", store))
+
+	//Initialize authentication middleware
+	router.Use(authInterceptor())
 
 	initializeRoutes()
 	err := router.Run() // listen and serve on 0.0.0.0:8080
@@ -63,9 +69,39 @@ func initializeRoutes() {
 
 }
 
+func authInterceptor() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		//user is signing in
+		uri := ctx.Request.RequestURI
+		if "/account/login" == uri {
+			ctx.Next()
+			return
+		}
+
+		//get user id from session to get its detail info from DB.
+		session := sessions.Default(ctx)
+		result := session.Get(SESSION_USER_KEY)
+		if result == nil {
+			ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, nil))
+			ctx.Abort()
+			return
+		}
+
+		account, err := db.GetAccountById(result.(int64))
+		if err != nil {
+			//response immediately whatever error occurs
+			ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+			ctx.Abort()
+			return
+		}
+		ctx.Set(AUTH_ACCOUNT, account)
+		ctx.Next()
+	}
+}
+
 //目前根据登录club账户直接获取对应club info
 func getClubInfo(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 
 	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
 	if gorm.IsRecordNotFoundError(err) {
@@ -81,9 +117,14 @@ func getClubInfo(ctx *gin.Context) {
 }
 
 func getAccount(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 	if !account.IsAdmin {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
 	}
 
@@ -97,9 +138,14 @@ func getAccount(ctx *gin.Context) {
 }
 
 func listAccounts(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 	if !account.IsAdmin {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
 	}
 
@@ -116,7 +162,7 @@ func listAccounts(ctx *gin.Context) {
 func tryToGetAuthAccount(ctx *gin.Context) *db.AdminAccount {
 	//get user id from session to get its detail info from DB.
 	session := sessions.Default(ctx)
-	id := session.Get(SESSION_USER_KEY).(string)
+	id := session.Get(SESSION_USER_KEY).(int64)
 	account, err := db.GetAccountById(id)
 	if err != nil {
 		//response immediately whatever error occurs
@@ -126,19 +172,38 @@ func tryToGetAuthAccount(ctx *gin.Context) *db.AdminAccount {
 	return account
 }
 
+func getHash512HexString(buf string) string {
+	hasher := sha512.New()
+	hasher.Write([]byte(buf))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+
+func getAuthAccountFromSession(ctx *gin.Context) *db.AdminAccount {
+	auth, ok := ctx.Get(AUTH_ACCOUNT)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		return nil
+	}
+	account := auth.(*db.AdminAccount)
+	return account
+}
+
+
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 	if !account.IsAdmin {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
 	}
+
+	authString := fmt.Sprintf("%s%s", getHash512HexString(uuid.New().String()), getHash512HexString(uuid.New().String()))
 
 	//construct account and club info
 	clubAccount := db.AdminAccount{
 		UserID: uuid.New().String(),
-		//TODO the rule generate auth string, SHA512(UUID) ?
-		AuthString: "",
+		AuthString: authString,
 		ClubID: uuid.New().String(),
 		IsAdmin: false,
 	}
@@ -174,20 +239,29 @@ func Pong(c *gin.Context) {
 		}))
 }
 
+type Token struct {
+	AuthToken string `json:"auth_token"`
+}
+
 // Handles Admin Login
 func AdminLogin(c *gin.Context) {
-	session := sessions.Default(c)
-	authToken := c.PostForm("authToken")
+	token := new(Token)
+	if err := c.ShouldBindJSON(token); err != nil {
+		c.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
+		log.Print(err)
+		return
+	}
 
 	var AdminAccount db.AdminAccount
-	if err := db.DB.Where("auth_string = ?", authToken).First(&AdminAccount).Error; err != nil {
+	if err := db.DB.Where("auth_string = ?", token.AuthToken).First(&AdminAccount).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.AUTH_FAILED, nil))
 		log.Print(err)
 		return
 	}
 
 	// Save the username in the session
-	session.Set(SESSION_USER_KEY, AdminAccount.ID)
+	session := sessions.Default(c)
+	session.Set(SESSION_USER_KEY, int64(AdminAccount.ID))
 	if err := session.Save(); err != nil {
 		c.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SAVE_SESSION_FAILED, nil))
 		return
@@ -198,7 +272,7 @@ func AdminLogin(c *gin.Context) {
 
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 	//get the source club info from DB.
 	sourceClub, err := db.GetClubInfoByClubId(account.ClubID)
 	if err != nil {
@@ -228,7 +302,7 @@ func updateClubInfo(ctx *gin.Context) {
 }
 
 func uploadSinglePicture(ctx *gin.Context) {
-	account := tryToGetAuthAccount(ctx)
+	account := getAuthAccountFromSession(ctx)
 
 	pid := ctx.Query("pid")
 	if !(pid == "1" || pid == "2" || pid == "3" || pid == "4" || pid == "5" || pid == "6") {

@@ -8,8 +8,8 @@ import (
 // Admin Accounts
 type AdminAccount struct {
 	gorm.Model
-	UserID     string `gorm:"not null;" json:"user_id"`
-	AuthString string `gorm:"type:varchar(1000);" json:"auth_string"`
+	UserID     string `gorm:"type:varchar(40);unique_index" json:"user_id"`
+	AuthString string `gorm:"type:varchar(256);unique_index" json:"auth_string"`
 	ClubID     string `gorm:"type:varchar(40);" json:"club_id"`
 	// For managers of Tinder for Clubs
 	IsAdmin bool `gorm:"type:tinyint(1);" json:"is_admin"`
@@ -23,9 +23,9 @@ func (ac *AdminAccount) Update() error {
 	return DB.Model(&AdminAccount{}).Where("user_id = ?",ac.UserID).Updates(*ac).Error
 }
 
-func GetAccountById(id string) (*AdminAccount, error) {
-	var account *AdminAccount
-	return account, DB.Where("id = ?", id).First(account).Error
+func GetAccountById(id int64) (*AdminAccount, error) {
+	var account AdminAccount
+	return &account, DB.Where("id = ?", id).First(&account).Error
 }
 
 func GetAllAccounts() ([]AdminAccount, error) {
@@ -47,13 +47,12 @@ type LoginHistory struct {
 	AttemptResult string `gorm:"not null;"`
 	// Dump the header info associated with this session
 	HeaderDump string `gorm:"type:varchar(1000);"`
-	Timestamp  time.Time
 }
 
 // Club Information
 type ClubInfo struct {
 	gorm.Model
-	ClubID    string `gorm:"type:varchar(100);" json:"club_id" binding:"required"`
+	ClubID    string `gorm:"type:varchar(40);unique_index" json:"club_id" binding:"required"`
 	Name      string `gorm:"not null;type:varchar(1000);" json:"name"`
 	Website   string `gorm:"type:varchar(500);" json:"website"`
 	Email     string `gorm:"type:varchar(500);" json:"email"`
@@ -105,8 +104,8 @@ type UserList struct {
 
 type ClubTags struct {
 	gorm.Model
-	ID  string `gorm:"AUTO_INCREMENT"`
-	Tag string `gorm:"not null;"`
+	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	Tag string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
 func (ct *ClubTags) Insert() error {
@@ -120,8 +119,8 @@ func SelectClubTags() ([]ClubTags, error) {
 
 type ClubTagRelationship struct {
 	gorm.Model
-	ClubUUID string `gorm:"not null;"`
-	TagID    string `gorm:"not null;"`
+	ClubUUID string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	TagID    string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
 func (cr *ClubTagRelationship) Insert() error {
