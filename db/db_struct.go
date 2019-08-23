@@ -77,16 +77,6 @@ type ClubInfo struct {
 	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
 }
 
-//FavouriteClubInfo is a assist struct to query club info to app user.
-type FavouriteClubInfo struct {
-	ClubInfo
-	IsFavourite bool
-}
-
-func GetFavouriteClubInfo()  {
-
-}
-
 func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
 	err := txDb.Create(ci).Error
 	return err
@@ -98,9 +88,9 @@ func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 	return clubInfo, err
 }
 
-func GetClubInfosByClubIds(ids []string) ([]ClubInfo, error) {
+func GetPublishedClubInfosByClubIds(ids []string) ([]ClubInfo, error) {
 	clubInfos := make([]ClubInfo, 0)
-	err := DB.Where("club_id in (?)", ids).Find(&clubInfos).Error
+	err := DB.Where("club_id in (?) AND published = 1", ids).Find(&clubInfos).Error
 	return clubInfos, err
 }
 
@@ -108,8 +98,32 @@ func GetClubInfosByClubIds(ids []string) ([]ClubInfo, error) {
 func (ci *ClubInfo) Update(txDb *gorm.DB) error {
 	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).
 		Updates(map[string]interface{}{"name":ci.Name, "website":ci.Website, "email":ci.Email, "group_link":ci.GroupLink, "video_link":ci.VideoLink, "published":ci.Published, "description":ci.Description,
-			"pic1_id":ci.Pic1ID, "pic2_id":ci.Pic2ID, "pic3_id":ci.Pic3ID, "pic4_id":ci.Pic4ID, "pic5_id":ci.Pic5ID, "pic6_id":ci.Pic6ID}).Error
+			"logo_id":ci.LogoID,"pic1_id":ci.Pic1ID, "pic2_id":ci.Pic2ID, "pic3_id":ci.Pic3ID, "pic4_id":ci.Pic4ID, "pic5_id":ci.Pic5ID, "pic6_id":ci.Pic6ID}).Error
 	return err
+}
+
+//FavouriteClubInfo is a assist struct to query club info to app user.
+type FavouriteClubInfo struct {
+	ClubInfo
+	Favourite bool
+}
+
+func GetAllPublishedFavouriteClubInfo(uid string) ([]FavouriteClubInfo, error) {
+	favouriteClubInfos := make([]FavouriteClubInfo, 0)
+	err := DB.Table("club_info c").Select("c.*, f.favourite").
+		Joins("LEFT JOIN (SELECT * FROM user_favourite WHERE loop_uid = ?) f ON c.club_id = f.club_id WHERE c.published = 1", uid).
+		Scan(&favouriteClubInfos).
+		Error
+	return favouriteClubInfos, err
+}
+
+func GetAllPublishedFavouriteClubInfoByClubIDs(uid string, ids []string) ([]FavouriteClubInfo, error) {
+	favouriteClubInfos := make([]FavouriteClubInfo, 0)
+	err := DB.Table("club_info c").Select("c.*, f.favourite").
+		Joins("LEFT JOIN (SELECT * FROM user_favourite WHERE loop_uid = ?) f ON c.club_id = f.club_id WHERE club_id in (?) and c.published = 1", ids, uid).
+		Scan(&favouriteClubInfos).
+		Error
+	return favouriteClubInfos, err
 }
 
 // Account pictures uploaded
@@ -167,6 +181,12 @@ type ClubTagRelationship struct {
 	gorm.Model
 	ClubID string `gorm:"type:varchar(40);unique_index:uni_tag"`
 	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
+}
+
+func GetTagRelationshipsByTagIDs(tagIDs []string) ([]ClubTagRelationship, error) {
+	relations := make([]ClubTagRelationship, 0)
+	err := DB.Select("DISTINCT(club_id),tag_id").Where("tag_id in (?)", tagIDs).Find(&relations).Error
+	return relations, err
 }
 
 func GetTagRelationshipsByClubID(clubID string) ([]ClubTagRelationship, error) {

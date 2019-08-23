@@ -115,24 +115,126 @@ func initializeRoutes() {
 	router.PUT("/app/favourite/:clubID", setFavouriteClub)          // 喜欢
 	router.PUT("/app/unfavourite/:clubID", setUnfavouriteClub)        // 不喜欢
 	router.GET("/app/clubs/all", GetAllClubs)                  //需要带上人们是否喜欢了这个Club
-	router.GET("/app/tagfilter")                  // 返回带 tag 的 Club
-	router.GET("/app/tages")                      // 返回 所有 tag
-	router.GET("/app/viewlist/unreadlist")        // Get current view list
-	router.GET("/app/viewlist/new")
-	router.PUT("/app/viewlist/markread")
+	router.GET("/app/tagfilter", getClubInfoOfGivenTags)                  // 返回带 tag 的 Club
+	router.GET("/app/tages", getAllTags)                      // 返回 所有 tag
+	router.GET("/app/viewlist/unreadlist") //TODO       // Get current view list
+	router.GET("/app/viewlist/new") //TODO
+	router.PUT("/app/viewlist/markread") //TODO
+}
+
+func getClubInfoOfGivenTags(ctx *gin.Context) {
+	//check user
+	user, err := getAppUser(ctx)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	//get request tags
+	tagStr := ctx.Query("tag_id")
+	if tagStr == "" {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, "tags not specified"))
+		return
+	}
+	tagIDs := strings.Split(tagStr, ";")
+
+	//validate tags
+	tags, err := db.GetClubTagsByTagIds(tagIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	if len(tags) != len(tagIDs) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, "invalid tag id"))
+		return
+	}
+
+	//get clubs having given tag id.
+	relationships, err := db.GetTagRelationshipsByTagIDs(tagIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	//unite club ids from clubs
+	clubIDs := make([]string, 0)
+	for _, relation :=range relationships {
+		clubIDs = append(clubIDs, relation.ClubID)
+	}
+
+	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfoByClubIDs(user.LoopUID, clubIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	responseInfo, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseInfo))
 }
 
 //FavouriteClubInfo is a assist struct to response club info to app user.
 type FavouriteClubInfo struct {
 	ClubInfoPost
 	//is user favourite to this club
-	IsFavourite bool
-	//the number that user favourite this club
-	FavouriteNum int64
+	Favourite bool
 }
 
 func GetAllClubs(ctx *gin.Context) {
+	//check user
+	user, err := getAppUser(ctx)
+	if err != nil {
+		log.Error(err)
+		return
+	}
 
+	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	responseInfo, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseInfo))
+}
+
+func getResponseFromFavouriteClubInfos(favouriteClubInfos []db.FavouriteClubInfo) ([]FavouriteClubInfo, error) {
+	clubInfos := make([]FavouriteClubInfo, 0)
+
+	for _, clubInfo :=range favouriteClubInfos {
+		tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
+			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
+		if err != nil {
+			return clubInfos, err
+		}
+
+		infoPost := ClubInfoPost{
+			ClubID:      clubInfo.ClubID,
+			Name:        clubInfo.Name,
+			Website:     clubInfo.Website,
+			Email:       clubInfo.Email,
+			GroupLink:   clubInfo.GroupLink,
+			VideoLink:   clubInfo.VideoLink,
+			Published:   clubInfo.Published,
+			Description: clubInfo.Description,
+			TagIds:      tagIDs,
+			PictureIds:  pictureIDs,
+		}
+		responseInfo := FavouriteClubInfo{
+			ClubInfoPost: infoPost,
+			Favourite: clubInfo.Favourite,
+		}
+		clubInfos = append(clubInfos, responseInfo)
+	}
+
+	return clubInfos, nil
 }
 
 //Sets club is unfavourite to user
@@ -215,6 +317,7 @@ func setFavouriteStateAndLogIntoDB(loopUID, clubID string, like bool) error {
 	return nil
 }
 
+//Returns the clubs that user favourite, whether published or not.
 func getFavouriteClubList(ctx *gin.Context) {
 	user, err := getAppUser(ctx)
 	if err != nil {
@@ -230,13 +333,15 @@ func getFavouriteClubList(ctx *gin.Context) {
 	}
 
 	//get club infos
-	clubInfos, err := db.GetClubInfosByClubIds(clubIds)
+	clubInfos, err := db.GetPublishedClubInfosByClubIds(clubIds)
 
 	//construct response info
 	clubInfoResponses := make([]ClubInfoPost, 0)
 	for _,clubInfo :=range clubInfos {
-		tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(&clubInfo, ctx)
+		tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
+			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
 		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 			return
 		}
 		clubInfoResponse := constructClubInfoPost(&clubInfo, tagIDs, pictureIDs)
@@ -398,8 +503,10 @@ func getClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo, ctx)
+	tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
+		clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
 	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
 
@@ -425,12 +532,11 @@ func constructClubInfoPost(clubInfo *db.ClubInfo, tagIDs []string, pictureIDs []
 }
 
 //Returns club tag id list and picture id list.
-func getClubTagIdsAndPictureIds(clubInfo *db.ClubInfo, ctx *gin.Context) ([]string, []string, error) {
+func getClubTagIdsAndPictureIds(clubID string, pictureIds ...string) ([]string, []string, error) {
 	//Get club tags relationships from DB
-	tagRelationships, err := db.GetTagRelationshipsByClubID(clubInfo.ClubID)
+	tagRelationships, err := db.GetTagRelationshipsByClubID(clubID)
 	if err != nil {
 		log.Error(err)
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return nil, nil, err
 	}
 
@@ -440,17 +546,7 @@ func getClubTagIdsAndPictureIds(clubInfo *db.ClubInfo, ctx *gin.Context) ([]stri
 		tagIDs = append(tagIDs, tagRelationship.TagID)
 	}
 
-	//Unite picture ids from club info
-	pictureIDs := make([]string, 0)
-	for idx:=0;idx<6;idx++ {
-		val := reflect.ValueOf(clubInfo).Elem().FieldByName(fmt.Sprintf("Pic%dID", idx+1)).String()
-		if val == "" {
-			break
-		}
-		pictureIDs = append(pictureIDs, val)
-	}
-
-	return tagIDs, pictureIDs, nil
+	return tagIDs, pictureIds, nil
 }
 
 func getAccountByUserId(ctx *gin.Context) {
@@ -602,6 +698,7 @@ type ClubInfoPost struct {
 	VideoLink   string   `json:"video_link"`
 	Published   bool     `json:"published"`
 	Description string   `json:"description"`
+	LogoId      string   `json:"logo_id"`
 	TagIds      []string `json:"tag_ids"`
 	PictureIds  []string `json:"picture_ids"`
 }
@@ -688,6 +785,7 @@ func updateClubInfo(ctx *gin.Context) {
 		VideoLink:   clubInfoPost.VideoLink,
 		Published:   clubInfoPost.Published,
 		Description: clubInfoPost.Description,
+		LogoID:      clubInfoPost.LogoId,
 	}
 
 	for idx, pid := range clubInfoPost.PictureIds {
