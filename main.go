@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	set "github.com/deckarep/golang-set"
 	"github.com/gin-contrib/secure"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/memstore"
@@ -16,6 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"path"
+	"reflect"
 	"strings"
 	"tinder-for-clubs-backend/common"
 	"tinder-for-clubs-backend/config"
@@ -42,7 +44,18 @@ func main() {
 
 	// Initialise HTTP framework and Session Store
 	router = gin.Default()
+	initRouter(router)
 
+	// Initialise mem session storage
+	store := memstore.NewStore([]byte(uuid.New().String()))
+	router.Use(sessions.Sessions("AdminSession", store))
+
+	gob.Register(db.AdminAccount{})
+	err := router.Run() // listen and serve on 0.0.0.0:8080
+	common.ErrFatalLog(err)
+}
+
+func initRouter(engine *gin.Engine) {
 	// Disable inline scripts
 	router.Use(secure.New(secure.Config{
 		ContentSecurityPolicy: "default-src 'self'",
@@ -50,17 +63,8 @@ func main() {
 
 	router.Use(CORSMiddleware())
 
-	store := memstore.NewStore([]byte(uuid.New().String()))
-	router.Use(sessions.Sessions("AdminSession", store))
-
+	// Register Handler
 	initializeRoutes()
-	registerObjToGob()
-	err := router.Run() // listen and serve on 0.0.0.0:8080
-	common.ErrFatalLog(err)
-}
-
-func registerObjToGob() {
-	gob.Register(db.AdminAccount{})
 }
 
 // CORS allow domains so that we can serve the website from different subdomains.
@@ -100,7 +104,7 @@ func initializeRoutes() {
 	router.GET("/club/tags", getTags)
 
 	// Public endpoints
-	//TODO router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
 }
 
 func getTags(ctx *gin.Context) {
@@ -120,6 +124,7 @@ func getTags(ctx *gin.Context) {
 }
 
 func serveStaticPicture(ctx *gin.Context) {
+	//TODO
 
 }
 
@@ -357,7 +362,7 @@ func updateClubInfo(ctx *gin.Context) {
 	}
 	//TODO check the params rest
 
-	//account user selected club tags
+	// Club tags
 	if len(clubInfoReq.TagIds) > 0 {
 		tags, err := db.GetClubTagsByTagIds(clubInfoReq.TagIds)
 		if err != nil {
@@ -365,29 +370,32 @@ func updateClubInfo(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 			return
 		}
-		//invalid tag ids
+		// Check for invalid tag IDs
 		if len(clubInfoReq.TagIds) != len(tags) {
 			ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 			return
 		}
 	}
 
-	//account user uploaded pictures
+	// Club picture upload
 	if len(clubInfoReq.PictureIds) > 0 {
-		pictures, err := db.GetAccountPicturesByPictureIds(account.AccountID, clubInfoReq.PictureIds)
+		dbPictureIDs, err := db.GetAccPictureIDS(account.AccountID)
+		dbPictureIDsSet := set.NewSet(dbPictureIDs)
 		if err != nil {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 			return
 		}
-		//invalid picture ids
-		if len(clubInfoReq.PictureIds) != len(pictures) {
-			ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-			return
+		// Check for invalid IDs
+		for pid := range clubInfoReq.PictureIds {
+			if !dbPictureIDsSet.Contains(pid) {
+				ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+				return
+			}
 		}
 	}
 
-	//construct club info and update it into DB
+	// Construct club information
 	clubInfo := db.ClubInfo{
 		ClubID:      clubInfoReq.ClubID,
 		Name:        clubInfoReq.Name,
@@ -397,8 +405,13 @@ func updateClubInfo(ctx *gin.Context) {
 		VideoLink:   clubInfoReq.VideoLink,
 		Published:   clubInfoReq.Published,
 		Description: clubInfoReq.Description,
-		PictureIds:  strings.Join(clubInfoReq.PictureIds, " "),
 	}
+
+	for idx, pid := range clubInfoReq.PictureIds {
+		// TODO 最好不要这么写，现在为了方便先这样
+		reflect.ValueOf(&clubInfo).Elem().FieldByName(fmt.Sprintf("Pic%dID", idx + 1)).SetString(pid)
+	}
+
 	txDb := db.DB.Begin()
 	err = clubInfo.Update(txDb)
 	if err != nil {
@@ -408,26 +421,24 @@ func updateClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	//update club tags relationship
+	// Update club tags relationship
 	if len(clubInfoReq.TagIds) > 0 {
-		//remove abandoned club tags first
-		err := db.DeleteAbandonedRelationshipsByClubId(txDb, clubInfoReq.ClubID, clubInfoReq.TagIds)
+		// Clean up old associations
+		err := db.CleanAllTags(txDb, clubInfoReq.ClubID)
 		if err != nil {
 			log.Error(err)
 			txDb.Rollback()
 			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 			return
 		}
-		//then insert latest relationship
+
+		// Then insert latest relationship
 		for _, tagId := range clubInfoReq.TagIds {
 			relationship := db.ClubTagRelationship{
 				ClubID: clubInfo.ClubID,
 				TagID:  tagId,
 			}
 			err := relationship.Insert(txDb)
-			if isDuplicateEntryErr(err) {
-				continue
-			}
 			if err != nil {
 				log.Error(err)
 				txDb.Rollback()
@@ -441,15 +452,7 @@ func updateClubInfo(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
-const DuplicateEntry = "Duplicate entry"
-
-func isDuplicateEntryErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), DuplicateEntry)
-}
-
+// Upload a picture and return an ID
 func uploadSinglePicture(ctx *gin.Context) {
 	account, err := getUser(ctx)
 	if err != nil {

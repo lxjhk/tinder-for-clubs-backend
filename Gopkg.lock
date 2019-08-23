@@ -2,12 +2,12 @@
 
 
 [[projects]]
-  digest = "1:cc93dd54278f6c0dd4b43588b3cf2c07b09b2a6dd4e2617edf81aa8946054c1e"
-  name = "github.com/gin-contrib/cors"
+  digest = "1:e47d51dab652d26c3fba6f8cba403f922d02757a82abdc77e90df7948daf296e"
+  name = "github.com/deckarep/golang-set"
   packages = ["."]
   pruneopts = "UT"
-  revision = "5f50d4fb4e0306dcacc6f8e9bea2dcee784dbbdf"
-  version = "v1.3.0"
+  revision = "cbaa98ba5575e67703b32b4b19f73c91f3c4159e"
+  version = "v1.7.1"
 
 [[projects]]
   branch = "master"
@@ -225,7 +225,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/gin-contrib/cors",
+    "github.com/deckarep/golang-set",
     "github.com/gin-contrib/secure",
     "github.com/gin-contrib/sessions",
     "github.com/gin-contrib/sessions/memstore",

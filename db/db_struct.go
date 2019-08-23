@@ -8,7 +8,7 @@ import (
 // Admin Accounts
 type AdminAccount struct {
 	gorm.Model
-	AccountID     string `gorm:"type:varchar(40);unique_index" json:"account_id"`
+	AccountID  string `gorm:"type:varchar(40);unique_index" json:"account_id"`
 	AuthString string `gorm:"type:varchar(256);"            json:"auth_string"`
 	ClubID     string `gorm:"type:varchar(40);"             json:"club_id"`
 	// For managers of Tinder for Clubs
@@ -16,26 +16,31 @@ type AdminAccount struct {
 }
 
 func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
-	return txDb.Create(ac).Error
+	err := txDb.Create(ac).Error
+	return err
 }
 
 func (ac *AdminAccount) Update() error {
-	return DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).Updates(*ac).Error
+	err := DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).Updates(*ac).Error
+	return err
 }
 
 func GetAccountById(id int64) (*AdminAccount, error) {
 	var account AdminAccount
-	return &account, DB.Where("id = ?", id).First(&account).Error
+	err := DB.Where("id = ?", id).First(&account).Error
+	return &account, err
 }
 
 func GetAllAccounts() ([]AdminAccount, error) {
 	accounts := make([]AdminAccount, 0)
-	return accounts, DB.Find(&accounts).Error
+	err := DB.Find(&accounts).Error
+	return accounts, err
 }
 
 func GetAccountByUserId(userId string) (*AdminAccount, error) {
 	var account AdminAccount
-	return &account, DB.Where("user_id = ?", userId).First(&account).Error
+	err := DB.Where("user_id = ?", userId).First(&account).Error
+	return &account, err
 }
 
 // Admin Account Login History
@@ -62,8 +67,6 @@ type ClubInfo struct {
 	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
 	Description string `gorm:"type:varchar(4000);" json:"description"`
 
-	PictureIds  string `gorm:"type:varchar(500)"`
-
 	// Stores the ID of the pictures. The first picture will also be the cover photo
 	Pic1ID string `gorm:"type:varchar(500);" json:"pic1_id"`
 	Pic2ID string `gorm:"type:varchar(500);" json:"pic2_id"`
@@ -76,13 +79,14 @@ type ClubInfo struct {
 // Account pictures uploaded
 type AccountPicture struct {
 	gorm.Model
-	AccountID string `gorm:"type:varchar(40);unique_index"  json:"account_id"`
-	PictureID string `gorm:"type:varchar(40);unique_index"  json:"picture_id"`
-	PictureName string `gorm:"type:varchar(60)"  json:"picture_name"`
+	AccountID   string `gorm:"type:varchar(40);unique_index"  json:"account_id"`
+	PictureID   string `gorm:"type:varchar(40);unique_index"  json:"picture_id"`
+	PictureName string `gorm:"type:varchar(60)"             json:"picture_name"`
 }
 
 func (ap *AccountPicture) Insert(txDb *gorm.DB) error {
-	return txDb.Create(ap).Error
+	err := txDb.Create(ap).Error
+	return err
 }
 
 func getPictureNameById(pictureId string) (string, error) {
@@ -94,22 +98,26 @@ func getPictureNameById(pictureId string) (string, error) {
 	return picture.PictureName, nil
 }
 
-func GetAccountPicturesByPictureIds(accountId string, ids []string) ([]AccountPicture, error) {
+func GetAccPictureIDS(accountId string) ([]AccountPicture, error) {
 	pictures := make([]AccountPicture, 0)
-	return pictures, DB.Where("account_id = ?", accountId).Find(&pictures).Error
+	err := DB.Where("account_id = ?", accountId).Find(&pictures).Error
+	return pictures, err
 }
 
 func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
-	return txDb.Create(ci).Error
+	err := txDb.Create(ci).Error
+	return err
 }
 
 func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 	clubInfo := &ClubInfo{}
-	return clubInfo, DB.Where("club_id = ?", id).Find(clubInfo).Error
+	err := DB.Where("club_id = ?", id).Find(clubInfo).Error
+	return clubInfo, err
 }
 
 func (ci *ClubInfo) Update(txDb *gorm.DB) error {
-	return txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
+	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
+	return err
 }
 
 func (ci *ClubInfo) UpdateAllPicIds() error {
@@ -138,28 +146,33 @@ type ClubTags struct {
 
 func GetClubTagsByTagIds(ids []string) ([]ClubTags, error) {
 	tags := make([]ClubTags, 0)
-	return tags, DB.Where("tag_id in (?)",ids).Find(&tags).Error
+	err := DB.Where("tag_id in (?)", ids).Find(&tags).Error
+	return tags, err
 }
 
 func (ct *ClubTags) Insert() error {
-	return DB.Create(&ct).Error
+	err := DB.Create(&ct).Error
+	return err
 }
 
 func GetAllClubTags() ([]ClubTags, error) {
 	tags := make([]ClubTags, 0)
-	return tags, DB.Find(&tags).Error
+	err := DB.Find(&tags).Error
+	return tags, err
 }
 
 type ClubTagRelationship struct {
 	gorm.Model
 	ClubID string `gorm:"type:varchar(40);unique_index:uni_tag"`
-	TagID    string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
 func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
-	return txDb.Create(&cr).Error
+	err := txDb.Create(&cr).Error
+	return err
 }
 
-func DeleteAbandonedRelationshipsByClubId(txDb *gorm.DB, clubId string,tagIds []string) error {
-	return txDb.Where("clubId = ? and tag_id not in (?)", clubId, tagIds).Delete(&ClubTagRelationship{}).Error
+func CleanAllTags(txDb *gorm.DB, clubId string) error {
+	err := txDb.Where("clubId = ?", clubId).Delete(&ClubTagRelationship{}).Error
+	return err
 }
