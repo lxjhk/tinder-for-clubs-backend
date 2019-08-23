@@ -67,6 +67,7 @@ type ClubInfo struct {
 	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
 	Description string `gorm:"type:varchar(4000);" json:"description"`
 
+	LogoID string `gorm:"type:varchar(40)" json:"logo_id"`
 	// Stores the ID of the pictures. The first picture will also be the cover photo
 	Pic1ID string `gorm:"type:varchar(500);" json:"pic1_id"`
 	Pic2ID string `gorm:"type:varchar(500);" json:"pic2_id"`
@@ -74,6 +75,16 @@ type ClubInfo struct {
 	Pic4ID string `gorm:"type:varchar(500);" json:"pic4_id"`
 	Pic5ID string `gorm:"type:varchar(500);" json:"pic5_id"`
 	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
+}
+
+//FavouriteClubInfo is a assist struct to query club info to app user.
+type FavouriteClubInfo struct {
+	ClubInfo
+	IsFavourite bool
+}
+
+func GetFavouriteClubInfo()  {
+
 }
 
 func (ci *ClubInfo) Insert(txDb *gorm.DB) error {

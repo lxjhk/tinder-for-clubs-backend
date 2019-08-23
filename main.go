@@ -101,7 +101,7 @@ func initializeRoutes() {
 
 	// Club manager endpoints
 	router.GET("/account", getCurrUser)
-	router.POST("/club/uploadpicture", uploadSinglePicture)
+	router.POST("/club/upload/:type", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
 	router.GET("/club/info", getClubInfo)
 	router.GET("/club/tags", getAllTags)
@@ -114,7 +114,7 @@ func initializeRoutes() {
 	router.GET("/app/favourite", getFavouriteClubList)                  //用户喜欢的 Club 的列表
 	router.PUT("/app/favourite/:clubID", setFavouriteClub)          // 喜欢
 	router.PUT("/app/unfavourite/:clubID", setUnfavouriteClub)        // 不喜欢
-	router.GET("/app/clubs/all")                  //需要带上人们是否喜欢了这个Club
+	router.GET("/app/clubs/all", GetAllClubs)                  //需要带上人们是否喜欢了这个Club
 	router.GET("/app/tagfilter")                  // 返回带 tag 的 Club
 	router.GET("/app/tages")                      // 返回 所有 tag
 	router.GET("/app/viewlist/unreadlist")        // Get current view list
@@ -122,14 +122,30 @@ func initializeRoutes() {
 	router.PUT("/app/viewlist/markread")
 }
 
+//FavouriteClubInfo is a assist struct to response club info to app user.
+type FavouriteClubInfo struct {
+	ClubInfoPost
+	//is user favourite to this club
+	IsFavourite bool
+	//the number that user favourite this club
+	FavouriteNum int64
+}
+
+func GetAllClubs(ctx *gin.Context) {
+
+}
+
+//Sets club is unfavourite to user
 func setUnfavouriteClub(ctx *gin.Context) {
 	doFavouriteClub(ctx, false)
 }
 
+//Sets club is favourite to user
 func setFavouriteClub(ctx *gin.Context) {
 	doFavouriteClub(ctx, true)
 }
 
+//Sets club is whatever favourite or unfavourite to user
 func doFavouriteClub(ctx *gin.Context, favourite bool) {
 	//check user
 	user, err := getAppUser(ctx)
@@ -150,7 +166,7 @@ func doFavouriteClub(ctx *gin.Context, favourite bool) {
 		return
 	}
 
-	err = setFavouriteStateAndLogIntoDB(user.LoopUID, clubID, true)
+	err = setFavouriteStateAndLogIntoDB(user.LoopUID, clubID, favourite)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -341,7 +357,7 @@ func serveStaticPicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
-	relativePath := "/local/static/" + picName
+	relativePath := "/tinder-for-clubs-backend/local/static/" + picName
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(relativePath))
 }
 
@@ -731,7 +747,6 @@ func uploadSinglePicture(ctx *gin.Context) {
 	}
 
 	file, err := ctx.FormFile("file")
-
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
