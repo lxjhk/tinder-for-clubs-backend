@@ -159,6 +159,12 @@ type ClubTagRelationship struct {
 	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
 }
 
+func GetTagRelationshipsByClubID(clubID string) ([]ClubTagRelationship, error) {
+	relations := make([]ClubTagRelationship, 0)
+	err := DB.Where("club_id = ?", clubID).Find(&relations).Error
+	return relations, err
+}
+
 func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
 	err := txDb.Create(&cr).Error
 	return err

@@ -149,7 +149,7 @@ func serveStaticPicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
-	relativePath := "/local/static/"+picName
+	relativePath := "/local/static/" + picName
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(relativePath))
 }
 
@@ -167,10 +167,38 @@ func getUser(ctx *gin.Context) (*db.AdminAccount, error) {
 	return &user, nil
 }
 
+type GetClubInfoResponse struct {
+	ClubID      string        `json:"club_id" binding:"required"`
+	Name        string        `json:"name"`
+	Website     string        `json:"website"`
+	Email       string        `json:"email"`
+	GroupLink   string        `json:"group_link"`
+	VideoLink   string        `json:"video_link"`
+	Published   bool          `json:"published"`
+	Description string        `json:"description"`
+	Pic1ID      string        `json:"pic1_id"`
+	Pic2ID      string        `json:"pic2_id"`
+	Pic3ID      string        `json:"pic3_id"`
+	Pic4ID      string        `json:"pic4_id"`
+	Pic5ID      string        `json:"pic5_id"`
+	Pic6ID      string        `json:"pic6_id"`
+	Tags        []TagResponse `json:"tags"`
+}
+
+type TagResponse struct {
+	TagID string `json:"tag_id"`
+	Tag   string `json:"tag"`
+}
+
 // Returns the club info of current login user.
 func getClubInfo(ctx *gin.Context) {
 	account, err := getUser(ctx)
 	if err != nil {
+		return
+	}
+
+	if account.IsAdmin {
+		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(GetClubInfoResponse{}))
 		return
 	}
 
@@ -181,7 +209,59 @@ func getClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfo))
+	//Get club tags relationships from DB
+	tagRelationships, err := db.GetTagRelationshipsByClubID(account.ClubID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	//Get tag ids from relationships
+	tagIDs := make([]string, 0)
+	for _, tagRelationship := range tagRelationships {
+		tagIDs = append(tagIDs, tagRelationship.TagID)
+	}
+
+	//Get corresponding tags when tag ids exist
+	tags := make([]db.ClubTags, 0)
+	if len(tagIDs) != 0 {
+		tags, err = db.GetClubTagsByTagIds(tagIDs)
+		if err != nil {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
+	}
+
+	//Construct tag response
+	tagResponses := make([]TagResponse, 0)
+	for _, t := range tags {
+		tagResponse := TagResponse{
+			TagID: t.TagID,
+			Tag:   t.Tag,
+		}
+		tagResponses = append(tagResponses, tagResponse)
+	}
+
+	clubInfoResponse := GetClubInfoResponse{
+		ClubID:      clubInfo.ClubID,
+		Name:        clubInfo.Name,
+		Website:     clubInfo.Website,
+		Email:       clubInfo.Email,
+		GroupLink:   clubInfo.GroupLink,
+		VideoLink:   clubInfo.VideoLink,
+		Published:   clubInfo.Published,
+		Description: clubInfo.Description,
+		Pic1ID: clubInfo.Pic1ID,
+		Pic2ID: clubInfo.Pic2ID,
+		Pic3ID: clubInfo.Pic3ID,
+		Pic4ID: clubInfo.Pic4ID,
+		Pic5ID: clubInfo.Pic5ID,
+		Pic6ID: clubInfo.Pic6ID,
+		Tags:        tagResponses,
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfoResponse))
 }
 
 func getAccountByUserId(ctx *gin.Context) {
@@ -335,24 +415,6 @@ type UpdateClubInfoRequest struct {
 	Description string   `json:"description"`
 	TagIds      []string `json:"tag_ids"`
 	PictureIds  []string `json:"picture_ids"`
-}
-
-type UpdateClubInfoResponse struct {
-	ClubID      string        `json:"club_id" binding:"required"`
-	Name        string        `json:"name"`
-	Website     string        `json:"website"`
-	Email       string        `json:"email"`
-	GroupLink   string        `json:"group_link"`
-	VideoLink   string        `json:"video_link"`
-	Published   bool          `json:"published"`
-	Description string        `json:"description"`
-	Tags        []TagResponse `json:"tags"`
-	PictureIds  []string      `json:"picture_ids"`
-}
-
-type TagResponse struct {
-	TagID string `json:"tag_id"`
-	Tag   string `json:"tag"`
 }
 
 const (
