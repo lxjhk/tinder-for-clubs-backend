@@ -97,7 +97,7 @@ func initializeRoutes() {
 	router.GET("/admin/account/user/:userId", getAccountByUserId)
 
 	// Club manager endpoints
-	//TODO: router.GET("/account", getUser)
+	router.GET("/account", getCurrUser)
 	router.POST("/club/uploadpicture", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
 	router.GET("/club/info", getClubInfo) //TODO 修改响应值
@@ -105,6 +105,16 @@ func initializeRoutes() {
 
 	// Public endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+}
+
+//Returns current login user
+func getCurrUser(ctx *gin.Context) {
+	account, err := getUser(ctx)
+	if err != nil {
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
 func getTags(ctx *gin.Context) {
@@ -124,8 +134,22 @@ func getTags(ctx *gin.Context) {
 }
 
 func serveStaticPicture(ctx *gin.Context) {
-	//TODO
-
+	pictureID := ctx.Param("pictureID")
+	if pictureID == "" {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PICTURE_ID, nil))
+		return
+	}
+	picName, err := db.GetPictureNameById(pictureID)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PICTURE_ID, nil))
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	relativePath := "/local/static/"+picName
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(relativePath))
 }
 
 // Get User information from request context.

@@ -89,7 +89,7 @@ func (ap *AccountPicture) Insert(txDb *gorm.DB) error {
 	return err
 }
 
-func getPictureNameById(pictureId string) (string, error) {
+func GetPictureNameById(pictureId string) (string, error) {
 	var picture AccountPicture
 	err := DB.Where("picture_id = ?", pictureId).First(&picture).Error
 	if err != nil {
@@ -98,9 +98,9 @@ func getPictureNameById(pictureId string) (string, error) {
 	return picture.PictureName, nil
 }
 
-func GetAccPictureIDS(accountId string) ([]AccountPicture, error) {
-	pictures := make([]AccountPicture, 0)
-	err := DB.Where("account_id = ?", accountId).Find(&pictures).Error
+func GetAccPictureIDS(accountId string) ([]string, error) {
+	pictures := make([]string, 0)
+	err := DB.Select("picture_id").Where("account_id = ?", accountId).Find(&pictures).Error
 	return pictures, err
 }
 
@@ -115,20 +115,12 @@ func GetClubInfoByClubId(id string) (*ClubInfo, error) {
 	return clubInfo, err
 }
 
+//Club manager may add or remove info in club, so we must update all columns, even the columns have default value.
 func (ci *ClubInfo) Update(txDb *gorm.DB) error {
-	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).UpdateColumns(*ci).Error
+	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).
+		Updates(map[string]interface{}{"name":ci.Name, "website":ci.Website, "email":ci.Email, "group_link":ci.GroupLink, "video_link":ci.VideoLink, "published":ci.Published, "description":ci.Description,
+			"pic1_id":ci.Pic1ID, "pic2_id":ci.Pic2ID, "pic3_id":ci.Pic3ID, "pic4_id":ci.Pic4ID, "pic5_id":ci.Pic5ID, "pic6_id":ci.Pic6ID}).Error
 	return err
-}
-
-func (ci *ClubInfo) UpdateAllPicIds() error {
-	return DB.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).Updates(ClubInfo{
-		Pic1ID: ci.Pic1ID,
-		Pic2ID: ci.Pic2ID,
-		Pic3ID: ci.Pic3ID,
-		Pic4ID: ci.Pic4ID,
-		Pic5ID: ci.Pic5ID,
-		Pic6ID: ci.Pic6ID,
-	}).Error
 }
 
 type UserList struct {

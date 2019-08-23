@@ -30,17 +30,18 @@ func Init(dbCred config.DBCredential) {
 	// Struct AutoMigrate
 	err = DB.AutoMigrate(&AdminAccount{}).Error
 	common.ErrFatalLog(err)
-	DB.AutoMigrate(&LoginHistory{})
+	err = DB.AutoMigrate(&LoginHistory{}).Error
 	common.ErrFatalLog(err)
-	DB.AutoMigrate(&ClubInfo{})
+	err = DB.AutoMigrate(&ClubInfo{}).Error
 	common.ErrFatalLog(err)
-	DB.AutoMigrate(&UserList{})
+	err = DB.AutoMigrate(&UserList{}).Error
 	common.ErrFatalLog(err)
-	DB.AutoMigrate(&ClubTags{})
+	err = DB.AutoMigrate(&ClubTags{}).Error
 	common.ErrFatalLog(err)
-	DB.AutoMigrate(&ClubTagRelationship{})
+	err = DB.AutoMigrate(&ClubTagRelationship{}).Error
 	common.ErrFatalLog(err)
-
+	err = DB.AutoMigrate(&AccountPicture{}).Error
+	common.ErrFatalLog(err)
 }
 
 func Close() {
