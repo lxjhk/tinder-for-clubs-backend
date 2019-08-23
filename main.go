@@ -44,13 +44,14 @@ func main() {
 
 	// Initialise HTTP framework and Session Store
 	router = gin.Default()
-	initRouter(router)
 
 	// Initialise mem session storage
 	store := memstore.NewStore([]byte(uuid.New().String()))
 	router.Use(sessions.Sessions("AdminSession", store))
 
 	gob.Register(db.AdminAccount{})
+
+	initRouter(router)
 	err := router.Run() // listen and serve on 0.0.0.0:8080
 	common.ErrFatalLog(err)
 }
@@ -201,6 +202,7 @@ func getAccountByUserId(ctx *gin.Context) {
 		return
 	}
 	if err != nil {
+		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
@@ -400,20 +402,26 @@ func updateClubInfo(ctx *gin.Context) {
 			return
 		}
 	}
+	log.Println(clubInfoReq.PictureIds)
 
 	// Club picture upload
 	if len(clubInfoReq.PictureIds) > 0 {
 		dbPictureIDs, err := db.GetAccPictureIDS(account.AccountID)
-		dbPictureIDsSet := set.NewSet(dbPictureIDs)
+
+		dbPictureIDsSet := set.NewSet()
+		for _, accPic := range dbPictureIDs {
+			dbPictureIDsSet.Add(accPic.PictureID)
+		}
+
 		if err != nil {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 			return
 		}
 		// Check for invalid IDs
-		for pid := range clubInfoReq.PictureIds {
+		for _, pid := range clubInfoReq.PictureIds {
 			if !dbPictureIDsSet.Contains(pid) {
-				ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+				ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, "does not contain this picture"))
 				return
 			}
 		}
@@ -433,7 +441,7 @@ func updateClubInfo(ctx *gin.Context) {
 
 	for idx, pid := range clubInfoReq.PictureIds {
 		// TODO 最好不要这么写，现在为了方便先这样
-		reflect.ValueOf(&clubInfo).Elem().FieldByName(fmt.Sprintf("Pic%dID", idx + 1)).SetString(pid)
+		reflect.ValueOf(&clubInfo).Elem().FieldByName(fmt.Sprintf("Pic%dID", idx+1)).SetString(pid)
 	}
 
 	txDb := db.DB.Begin()
@@ -476,6 +484,10 @@ func updateClubInfo(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
+type UploadPicResponse struct {
+	Pid string `json:"pid"`
+}
+
 // Upload a picture and return an ID
 func uploadSinglePicture(ctx *gin.Context) {
 	account, err := getUser(ctx)
@@ -483,55 +495,54 @@ func uploadSinglePicture(ctx *gin.Context) {
 		return
 	}
 
-	//get multipart file from the multipart form data.
-	multipart, err := ctx.MultipartForm()
+	file, err := ctx.FormFile("file")
+
 	if err != nil {
 		log.Error(err)
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
 
-	//returns error when not one picture.
-	files := multipart.File["image"]
-	if len(files) > 1 || len(files) == 0 {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_NUM_NOT_SUPPORTED, nil))
-		return
-	}
-
-	//ensures what uploaded is a picture
-	file := files[0]
-	fileType := file.Header.Get("Content-Type")
-	if !strings.HasPrefix(fileType, "image") {
-		log.Error(err)
+	// ensures what's uploaded is a picture
+	if !strings.HasSuffix(file.Filename, ".jpg") && !strings.HasSuffix(file.Filename, ".jpeg") {
+		log.Println(file.Filename)
+		log.Error("Uploaded file is %d. The extension does noe match jpg ir jpeg", file.Filename)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.UPLOAD_TYPE_NOT_SUPPORTED, nil))
 		return
 	}
 
-	//All is detected, save picture info into db,
-	// rolls back DB transaction when fails to save picture to the disk.
-	picture := db.AccountPicture{
+	MaxFileSize := int64(1 << 20)
+	// Check file size limit
+	if file.Size > MaxFileSize {
+		log.Error("File size is %dMB > than 1MB", file.Size/1<<20)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_TOO_LARGE, nil))
+		return
+	}
+
+	fileUUID := uuid.New().String()
+	fileName := fileUUID + path.Ext(file.Filename)
+	basePath := path.Join(globalConfig.General.PictureStoragePath, fileName)
+
+	err = ctx.SaveUploadedFile(file, basePath)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	// Sanity check done. Save picture info into db,
+	pictureEntry := db.AccountPicture{
 		AccountID:   account.AccountID,
-		PictureID:   uuid.New().String(),
-		PictureName: uuid.New().String() + path.Ext(file.Filename),
+		PictureID:   fileUUID,
+		PictureName: fileName,
 	}
-	txDb := db.DB.Begin()
-	err = picture.Insert(txDb)
+
+	err = db.DB.Create(&pictureEntry).Error
 	if err != nil {
 		log.Error(err)
-		txDb.Rollback()
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
 
-	//save picture to disk
-	err = ctx.SaveUploadedFile(file, fmt.Sprintf("%s/%s", globalConfig.General.PictureStoragePath, picture.PictureName))
-	if err != nil {
-		log.Error(err)
-		txDb.Rollback()
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		return
-	}
-	txDb.Commit()
-
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(picture.PictureID))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(UploadPicResponse{Pid: fileUUID}))
 }

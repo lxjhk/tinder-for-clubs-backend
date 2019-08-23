@@ -29,6 +29,8 @@ var UPLOAD_TYPE_NOT_SUPPORTED = ResponseCode{Code: 4002, Message: "Only support 
 var CLUB_PIC_NUM_ABOVE_LIMIT = ResponseCode{Code: 4003, Message: "Club picture number above max limit!"}
 var CLUB_TAG_NUM_ABOVE_LIMIT = ResponseCode{Code: 4004, Message: "Club tag number above max limit!"}
 var INVALID_PICTURE_ID = ResponseCode{Code: 4005, Message: "Invalid picture id!"}
+var PIC_TOO_LARGE = ResponseCode{Code: 4006, Message: "Picture too large MAX 1MB!"}
+
 
 func ConstructResponse(code ResponseCode, payload interface{}) Response {
 	return Response{code, payload}

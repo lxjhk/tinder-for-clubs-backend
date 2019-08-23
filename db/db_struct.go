@@ -39,7 +39,7 @@ func GetAllAccounts() ([]AdminAccount, error) {
 
 func GetAccountByUserId(userId string) (*AdminAccount, error) {
 	var account AdminAccount
-	err := DB.Where("user_id = ?", userId).First(&account).Error
+	err := DB.Where("account_id = ?", userId).First(&account).Error
 	return &account, err
 }
 
@@ -79,9 +79,9 @@ type ClubInfo struct {
 // Account pictures uploaded
 type AccountPicture struct {
 	gorm.Model
-	AccountID   string `gorm:"type:varchar(40);unique_index"  json:"account_id"`
-	PictureID   string `gorm:"type:varchar(40);unique_index"  json:"picture_id"`
-	PictureName string `gorm:"type:varchar(60)"             json:"picture_name"`
+	AccountID   string `gorm:"type:varchar(40);"  json:"account_id"`
+	PictureID   string `gorm:"type:varchar(40);"  json:"picture_id"`
+	PictureName string `gorm:"type:varchar(60)"   json:"picture_name"`
 }
 
 func (ap *AccountPicture) Insert(txDb *gorm.DB) error {
