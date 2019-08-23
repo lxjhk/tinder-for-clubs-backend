@@ -98,8 +98,8 @@ func GetPictureNameById(pictureId string) (string, error) {
 	return picture.PictureName, nil
 }
 
-func GetAccPictureIDS(accountId string) ([]string, error) {
-	pictures := make([]string, 0)
+func GetAccPictureIDS(accountId string) ([]AccountPicture, error) {
+	pictures := make([]AccountPicture, 0)
 	err := DB.Select("picture_id").Where("account_id = ?", accountId).Find(&pictures).Error
 	return pictures, err
 }
