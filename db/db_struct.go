@@ -123,12 +123,6 @@ func (ci *ClubInfo) Update(txDb *gorm.DB) error {
 	return err
 }
 
-type UserList struct {
-	gorm.Model
-	LoopUID      string    `gorm:"not null;"`
-	LoopUserName string    `gorm:"not null;"`
-	JoinTime     time.Time `gorm:"not null;"`
-}
 
 type ClubTags struct {
 	gorm.Model
@@ -173,4 +167,43 @@ func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
 func CleanAllTags(txDb *gorm.DB, clubId string) error {
 	err := txDb.Where("clubId = ?", clubId).Delete(&ClubTagRelationship{}).Error
 	return err
+}
+
+type UserList struct {
+	gorm.Model
+	LoopUID      string    `gorm:"not null;"`
+	LoopUserName string    `gorm:"not null;"`
+	JoinTime     time.Time `gorm:"not null;"`
+}
+
+type ViewList struct { //append only
+	gorm.Model
+	LoopUID        string
+	ViewListID     string
+	timestamp	   time.Time
+}
+
+type ViewListLog struct { //append only
+	gorm.Model
+	ViewListID     string
+	LoopUID        string
+	ClubID	   	   string
+	Action         string // "like" "skip"
+	Timestamp      time.Time
+}
+
+type UserFavourite struct { // state
+	gorm.Model
+	LoopUID        string
+	ClubID	   	   string
+	Favourite      bool // "like" "skip"
+	Timestamp      time.Time
+}
+
+type UserFavouriteLog struct { // append only log
+	gorm.Model
+	LoopUID        string
+	ClubID	   	   string
+	Action         string // "favourite" "unfavourite"
+	Timestamp      time.Time
 }

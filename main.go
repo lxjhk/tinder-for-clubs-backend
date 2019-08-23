@@ -104,8 +104,20 @@ func initializeRoutes() {
 	router.GET("/club/info", getClubInfo) //TODO 修改响应值
 	router.GET("/club/tags", getTags)
 
-	// Public endpoints
+	// MiniApp endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+
+	router.POST("/app/register") // user id - header
+	router.GET("/app/userinfo") // user id - header
+	router.GET("/app/favourite") //用户喜欢的 Club 的列表
+	router.PUT("/app/favourite/:clubID") // 喜欢
+	router.PUT("/app/unfavourite/:clubID") // 不喜欢
+	router.GET("/app/clubs/all") //需要带上人们是否喜欢了这个Club
+	router.GET("/app/tagfilter") // 返回带 tag 的 Club
+	router.GET("/app/tages") // 返回 所有 tag
+	router.GET("/app/viewlist/unreadlist") // Get current view list
+	router.GET("/app/viewlist/new")
+	router.PUT("/app/viewlist/markread")
 }
 
 //Returns current login user
@@ -568,7 +580,7 @@ func uploadSinglePicture(ctx *gin.Context) {
 	// ensures what's uploaded is a picture
 	if !strings.HasSuffix(file.Filename, ".jpg") && !strings.HasSuffix(file.Filename, ".jpeg") {
 		log.Println(file.Filename)
-		log.Error("Uploaded file is %d. The extension does noe match jpg ir jpeg", file.Filename)
+		log.Errorf("Uploaded file is %v. The extension does noe match jpg ir jpeg", file.Filename)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.UPLOAD_TYPE_NOT_SUPPORTED, nil))
 		return
 	}
@@ -576,7 +588,7 @@ func uploadSinglePicture(ctx *gin.Context) {
 	MaxFileSize := int64(1 << 20)
 	// Check file size limit
 	if file.Size > MaxFileSize {
-		log.Error("File size is %dMB > than 1MB", file.Size/1<<20)
+		log.Errorf("File size is %v MB > than 1MB", file.Size/1<<20)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.PIC_TOO_LARGE, nil))
 		return
 	}
