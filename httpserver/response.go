@@ -24,7 +24,7 @@ var NOT_FOUND = ResponseCode{Code: 5002, Message: "Not found!"}
 
 
 var INVALID_PARAMS = ResponseCode{Code: 4000, Message: "Invalid parameters!"}
-var UPLOAD_TYPE_NOT_SUPPORTED = ResponseCode{Code: 4002, Message: "Only support picture upload!"}
+var UPLOAD_TYPE_NOT_SUPPORTED = ResponseCode{Code: 4002, Message: "Only support jpg or jpeg picture upload!"}
 var CLUB_PIC_NUM_ABOVE_LIMIT = ResponseCode{Code: 4003, Message: "Club picture number above max limit!"}
 var CLUB_TAG_NUM_ABOVE_LIMIT = ResponseCode{Code: 4004, Message: "Club tag number above max limit!"}
 var INVALID_PICTURE_ID = ResponseCode{Code: 4005, Message: "Invalid picture id!"}

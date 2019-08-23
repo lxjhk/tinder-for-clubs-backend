@@ -76,11 +76,36 @@ type ClubInfo struct {
 	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
 }
 
+func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
+	err := txDb.Create(ci).Error
+	return err
+}
+
+func GetClubInfoByClubId(id string) (*ClubInfo, error) {
+	clubInfo := &ClubInfo{}
+	err := DB.Where("club_id = ?", id).Find(clubInfo).Error
+	return clubInfo, err
+}
+
+func GetClubInfosByClubIds(ids []string) ([]ClubInfo, error) {
+	clubInfos := make([]ClubInfo, 0)
+	err := DB.Where("club_id in (?)", ids).Find(&clubInfos).Error
+	return clubInfos, err
+}
+
+//Club manager may add or remove info in club, so we must update all columns, even the columns have default value.
+func (ci *ClubInfo) Update(txDb *gorm.DB) error {
+	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).
+		Updates(map[string]interface{}{"name":ci.Name, "website":ci.Website, "email":ci.Email, "group_link":ci.GroupLink, "video_link":ci.VideoLink, "published":ci.Published, "description":ci.Description,
+			"pic1_id":ci.Pic1ID, "pic2_id":ci.Pic2ID, "pic3_id":ci.Pic3ID, "pic4_id":ci.Pic4ID, "pic5_id":ci.Pic5ID, "pic6_id":ci.Pic6ID}).Error
+	return err
+}
+
 // Account pictures uploaded
 type AccountPicture struct {
 	gorm.Model
-	AccountID   string `gorm:"type:varchar(40);"  json:"account_id"`
-	PictureID   string `gorm:"type:varchar(40);"  json:"picture_id"`
+	AccountID   string `gorm:"type:varchar(40);index"  json:"account_id"`
+	PictureID   string `gorm:"type:varchar(40);unique_index"  json:"picture_id"`
 	PictureName string `gorm:"type:varchar(60)"   json:"picture_name"`
 }
 
@@ -103,26 +128,6 @@ func GetAccPictureIDS(accountId string) ([]AccountPicture, error) {
 	err := DB.Select("picture_id").Where("account_id = ?", accountId).Find(&pictures).Error
 	return pictures, err
 }
-
-func (ci *ClubInfo) Insert(txDb *gorm.DB) error {
-	err := txDb.Create(ci).Error
-	return err
-}
-
-func GetClubInfoByClubId(id string) (*ClubInfo, error) {
-	clubInfo := &ClubInfo{}
-	err := DB.Where("club_id = ?", id).Find(clubInfo).Error
-	return clubInfo, err
-}
-
-//Club manager may add or remove info in club, so we must update all columns, even the columns have default value.
-func (ci *ClubInfo) Update(txDb *gorm.DB) error {
-	err := txDb.Model(&ClubInfo{}).Where("club_id = ?", ci.ClubID).
-		Updates(map[string]interface{}{"name":ci.Name, "website":ci.Website, "email":ci.Email, "group_link":ci.GroupLink, "video_link":ci.VideoLink, "published":ci.Published, "description":ci.Description,
-			"pic1_id":ci.Pic1ID, "pic2_id":ci.Pic2ID, "pic3_id":ci.Pic3ID, "pic4_id":ci.Pic4ID, "pic5_id":ci.Pic5ID, "pic6_id":ci.Pic6ID}).Error
-	return err
-}
-
 
 type ClubTags struct {
 	gorm.Model
@@ -171,39 +176,69 @@ func CleanAllTags(txDb *gorm.DB, clubId string) error {
 
 type UserList struct {
 	gorm.Model
-	LoopUID      string    `gorm:"not null;"`
-	LoopUserName string    `gorm:"not null;"`
-	JoinTime     time.Time `gorm:"not null;"`
+	LoopUID      string    `gorm:"type:varchar(70);index"`
+	LoopUserName string    `gorm:"type:varchar(50)"`
+	JoinTime     time.Time
+}
+
+func (ul *UserList) Insert() error {
+	err := DB.Create(ul).Error
+	return err
+}
+
+func GetAppUserByUid(uid string) (*UserList, error) {
+	var user UserList
+	err := DB.Where("loop_uid = ?", uid).First(&user).Error
+	return &user, err
 }
 
 type ViewList struct { //append only
 	gorm.Model
-	LoopUID        string
-	ViewListID     string
+	LoopUID        string `gorm:"type:varchar(70);unique_index"`
+	ViewListID     string `gorm:"type:varchar(40);unique_index"`
 	timestamp	   time.Time
 }
 
 type ViewListLog struct { //append only
 	gorm.Model
-	ViewListID     string
-	LoopUID        string
-	ClubID	   	   string
+	ViewListID     string `gorm:"type:varchar(40);index"`
+	LoopUID        string `gorm:"type:varchar(70);index"`
+	ClubID	   	   string `gorm:"type:varchar(40);index"`
 	Action         string // "like" "skip"
 	Timestamp      time.Time
 }
 
-type UserFavourite struct { // state
+type UserFavourite struct { //append and delete
 	gorm.Model
-	LoopUID        string
-	ClubID	   	   string
-	Favourite      bool // "like" "skip"
-	Timestamp      time.Time
+	LoopUID        string `gorm:"type:varchar(70);index"`
+	ClubID	   	   string `gorm:"type:varchar(40);index"`
+	Favourite      bool  `gorm:"type:tinyint(1)"`
 }
+
+func (f *UserFavourite) InsertOrUpdate(txDb *gorm.DB) error {
+	err := txDb.Where("Loop_uid = ? and club_id = ?", f.LoopUID, f.ClubID).Assign("favourite = ?", f.Favourite).FirstOrCreate(&UserFavourite{}).Error
+	return err
+}
+
+func GetUserFavouritesByUID(uid string) ([]UserFavourite, error) {
+	favourites := make([]UserFavourite, 0)
+	err := DB.Where("loop_uid = ?", uid).Find(&favourites).Error
+	return favourites, err
+}
+
+const (
+	FAVORITE_ACTION = "FAVORITE"
+	UNFAVORITE_ACTION = "UNFAVORITE"
+)
 
 type UserFavouriteLog struct { // append only log
 	gorm.Model
-	LoopUID        string
-	ClubID	   	   string
-	Action         string // "favourite" "unfavourite"
-	Timestamp      time.Time
+	LoopUID        string `gorm:"type:varchar(70);index"`
+	ClubID	   	   string `gorm:"type:varchar(40);index"`
+	Action         string `gorm:"type:varchar(20)"`// "favourite" "unfavourite"
+}
+
+func (l *UserFavouriteLog) Insert(txDb *gorm.DB) error {
+	err := txDb.Create(l).Error
+	return err
 }
