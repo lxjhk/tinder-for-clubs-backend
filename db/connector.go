@@ -40,6 +40,8 @@ func Init(dbCred config.DBCredential) {
 	common.ErrFatalLog(err)
 	DB.AutoMigrate(&ClubTagRelationship{})
 	common.ErrFatalLog(err)
+	DB.AutoMigrate(&AccountPicture{})
+	common.ErrFatalLog(err)
 
 }
 
