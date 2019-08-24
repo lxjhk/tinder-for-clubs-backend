@@ -126,8 +126,15 @@ func initializeRoutes() {
 }
 
 func logout(ctx *gin.Context) {
-	// delete the user in the session
+	// if user exist in the session
 	session := sessions.Default(ctx)
+	result := session.Get(USER)
+	if result == nil {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, false))
+		return
+	}
+
+	// delete the user in the session
 	session.Delete(USER)
 	if err := session.Save(); err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
