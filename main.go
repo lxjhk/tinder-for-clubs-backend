@@ -93,6 +93,7 @@ func initializeRoutes() {
 
 	//For admin and club managers to login
 	router.POST("/login", Login)
+	router.DELETE("/logout", logout)
 	router.GET("/authorized",ifAuthorized)
 
 	// Admin only endpoints
@@ -105,23 +106,35 @@ func initializeRoutes() {
 	router.POST("/club/uploadpicture", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
 	router.GET("/club/info", getClubInfo)
-	router.GET("/club/tags", getAllTags)
+	router.GET("/club/tags", adminGetAllTags)
 
 	// MiniApp endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
 	router.Static("/clubphoto",globalConfig.General.PictureStoragePath)
 
-	router.POST("/app/register", registerAppUser) // user id - header
-	router.GET("/app/userinfo", getAppUserInfo)                 // user id - header
-	router.GET("/app/favourite", getFavouriteClubList)                  //用户喜欢的 Club 的列表
-	router.PUT("/app/favourite/:clubID", setFavouriteClub)          // 喜欢
-	router.PUT("/app/unfavourite/:clubID", setUnfavouriteClub)        // 不喜欢
-	router.GET("/app/clubs/all", GetAllClubs)                  //需要带上人们是否喜欢了这个Club
-	router.GET("/app/tagfilter", getClubInfoOfGivenTags)                  // 返回带 tag 的 Club
-	router.GET("/app/tages", getAllTags)                      // 返回 所有 tag
-	router.GET("/app/viewlist/unreadlist/:viewListID", getUnreadViewList) //TODO       // Get current view list
-	router.GET("/app/viewlist/new", getNewViewList) //TODO
-	router.PUT("/app/viewlist/markread", markClubReadInViewList) //TODO
+	router.POST("/app/register", registerAppUser)
+	router.GET("/app/userinfo", getAppUserInfo)
+	router.GET("/app/favourite", getFavouriteClubList)
+	router.PUT("/app/favourite/:clubID", setFavouriteClub)
+	router.PUT("/app/unfavourite/:clubID", setUnfavouriteClub)
+	router.GET("/app/clubs/all", GetAllClubs)
+	router.GET("/app/tagfilter", getClubInfoOfGivenTags)
+	router.GET("/app/tages", appGetAllTags)
+	router.GET("/app/viewlist/unreadlist/:viewListID", getUnreadViewList)
+	router.GET("/app/viewlist/new", getNewViewList)
+	router.PUT("/app/viewlist/markread", markClubReadInViewList)
+}
+
+func logout(ctx *gin.Context) {
+	// delete the user in the session
+	session := sessions.Default(ctx)
+	session.Delete(USER)
+	if err := session.Save(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
 func getUnreadViewList(ctx *gin.Context) {
@@ -302,8 +315,8 @@ func getNewViewList(ctx *gin.Context) {
 }
 
 type ViewListPost struct {
-	ViewListId  string
-	ViewList []FavouriteClubInfo
+	ViewListId  string `json:"view_list_id"`
+	ViewList []FavouriteClubInfo `json:"view_list"`
 }
 
 func getClubInfoOfGivenTags(ctx *gin.Context) {
@@ -363,7 +376,7 @@ func getClubInfoOfGivenTags(ctx *gin.Context) {
 type FavouriteClubInfo struct {
 	ClubInfoPost
 	//is user favourite to this club
-	Favourite bool
+	Favourite bool `json:"favourite"`
 }
 
 func GetAllClubs(ctx *gin.Context) {
@@ -409,6 +422,7 @@ func getResponseFromFavouriteClubInfos(favouriteClubInfos []db.FavouriteClubInfo
 			VideoLink:   clubInfo.VideoLink,
 			Published:   clubInfo.Published,
 			Description: clubInfo.Description,
+			LogoId:      clubInfo.LogoID,
 			TagIds:      tagIDs,
 			PictureIds:  pictureIDs,
 		}
@@ -582,6 +596,10 @@ func registerAppUser(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
+	if len(userPost.LoopUserName) == 0 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
 
 	user := db.UserList{
 		LoopUID: userPost.LoopUID,
@@ -616,7 +634,23 @@ func getCurrUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
-func getAllTags(ctx *gin.Context) {
+func appGetAllTags(ctx *gin.Context)  {
+	_, err := getAppUser(ctx)
+	if err != nil {
+		return
+	}
+
+	tags, err := db.GetAllClubTags()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(tags))
+}
+
+func adminGetAllTags(ctx *gin.Context)  {
 	_, err := getAdminUser(ctx)
 	if err != nil {
 		return
@@ -710,6 +744,7 @@ func constructClubInfoPost(clubInfo *db.ClubInfo, tagIDs []string, pictureIDs []
 		VideoLink:   clubInfo.VideoLink,
 		Published:   clubInfo.Published,
 		Description: clubInfo.Description,
+		LogoId:      clubInfo.LogoID,
 		TagIds:      tagIDs,
 		PictureIds:  pictureIDs,
 	}
@@ -717,7 +752,7 @@ func constructClubInfoPost(clubInfo *db.ClubInfo, tagIDs []string, pictureIDs []
 }
 
 //Returns club tag id list and picture id list.
-func getClubTagIdsAndPictureIds(clubID string, pictureIds ...string) ([]string, []string, error) {
+func getClubTagIdsAndPictureIds(clubID string, picIds ...string) ([]string, []string, error) {
 	//Get club tags relationships from DB
 	tagRelationships, err := db.GetTagRelationshipsByClubID(clubID)
 	if err != nil {
@@ -729,6 +764,15 @@ func getClubTagIdsAndPictureIds(clubID string, pictureIds ...string) ([]string, 
 	tagIDs := make([]string, 0)
 	for _, tagRelationship := range tagRelationships {
 		tagIDs = append(tagIDs, tagRelationship.TagID)
+	}
+
+	//Unite non-nil pic ids
+	pictureIds := make([]string, 0)
+	for _, picId :=range picIds {
+		if picId == "" {
+			break
+		}
+		pictureIds = append(pictureIds, picId)
 	}
 
 	return tagIDs, pictureIds, nil
@@ -891,7 +935,7 @@ type ClubInfoPost struct {
 const (
 	CLUB_NAME_MAX_LEN = 50
 	CLUB_PIC_MAX_NUM  = 6
-	CLUB_TAG_MAX_NUM  = 8
+	CLUB_TAG_MAX_NUM  = 4
 )
 
 //Club user updates their club info.

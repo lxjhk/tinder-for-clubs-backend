@@ -121,7 +121,7 @@ func GetAllPublishedFavouriteClubInfo(uid string) ([]FavouriteClubInfo, error) {
 func GetAllPublishedFavouriteClubInfoByClubIDs(uid string, ids []string) ([]FavouriteClubInfo, error) {
 	favouriteClubInfos := make([]FavouriteClubInfo, 0)
 	err := DB.Table("club_info c").Select("c.*, f.favourite").
-		Joins("LEFT JOIN (SELECT * FROM user_favourite WHERE loop_uid = ?) f ON c.club_id = f.club_id WHERE club_id in (?) and c.published = 1", ids, uid).
+		Joins("LEFT JOIN (SELECT * FROM user_favourite WHERE loop_uid = ?) f ON c.club_id = f.club_id WHERE c.club_id in (?) and c.published = 1", uid, ids).
 		Scan(&favouriteClubInfos).
 		Error
 	return favouriteClubInfos, err
@@ -267,7 +267,7 @@ type UserFavourite struct { //append and delete
 }
 
 func (f *UserFavourite) InsertOrUpdate(txDb *gorm.DB) error {
-	err := txDb.Where("Loop_uid = ? and club_id = ?", f.LoopUID, f.ClubID).Assign("favourite = ?", f.Favourite).FirstOrCreate(&UserFavourite{}).Error
+	err := txDb.Where("Loop_uid = ? and club_id = ?", f.LoopUID, f.ClubID).Assign(map[string]interface{}{"favourite":f.Favourite}).FirstOrCreate(f).Error
 	return err
 }
 
