@@ -15,6 +15,7 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	log "github.com/sirupsen/logrus"
+	"math/rand"
 	"net/http"
 	"path"
 	"reflect"
@@ -101,13 +102,14 @@ func initializeRoutes() {
 
 	// Club manager endpoints
 	router.GET("/account", getCurrUser)
-	router.POST("/club/upload/:type", uploadSinglePicture)
+	router.POST("/club/uploadpicture", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
 	router.GET("/club/info", getClubInfo)
 	router.GET("/club/tags", getAllTags)
 
 	// MiniApp endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
+	router.Static("/clubphoto",globalConfig.General.PictureStoragePath)
 
 	router.POST("/app/register", registerAppUser) // user id - header
 	router.GET("/app/userinfo", getAppUserInfo)                 // user id - header
@@ -117,9 +119,191 @@ func initializeRoutes() {
 	router.GET("/app/clubs/all", GetAllClubs)                  //需要带上人们是否喜欢了这个Club
 	router.GET("/app/tagfilter", getClubInfoOfGivenTags)                  // 返回带 tag 的 Club
 	router.GET("/app/tages", getAllTags)                      // 返回 所有 tag
-	router.GET("/app/viewlist/unreadlist") //TODO       // Get current view list
-	router.GET("/app/viewlist/new") //TODO
-	router.PUT("/app/viewlist/markread") //TODO
+	router.GET("/app/viewlist/unreadlist/:viewListID", getUnreadViewList) //TODO       // Get current view list
+	router.GET("/app/viewlist/new", getNewViewList) //TODO
+	router.PUT("/app/viewlist/markread", markClubReadInViewList) //TODO
+}
+
+func getUnreadViewList(ctx *gin.Context) {
+	//check user
+	user, err := getAppUser(ctx)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	viewListID := ctx.Param("viewListID")
+	if viewListID == "" {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
+	//Get all club infos attached with current user favourite or not
+	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//construct response club info from DB query result
+	responseClubs, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//shuffle response club infos
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(responseClubs), func(i, j int) { responseClubs[i], responseClubs[j] = responseClubs[j], responseClubs[i] })
+
+	//get read club ids
+	logs, err := db.GetViewedListByID(user.LoopUID, viewListID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//remove clubs already read in response clubs
+	responseUnreadClubs := make([]FavouriteClubInfo, 0)
+	for _, club :=range responseClubs {
+		var read bool
+		for _, l :=range logs {
+			if club.ClubID == l.ClubID {
+				read = true
+				break
+			}
+		}
+		if read {
+			continue
+		}
+		responseUnreadClubs = append(responseUnreadClubs, club)
+	}
+
+	//construct response unread view list
+	viewListPost := ViewListPost{
+		ViewListId: viewListID,
+		ViewList: responseUnreadClubs,
+	}
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))
+}
+
+type MarkClubReadInViewListRequest struct {
+	ViewListId  string `json:"view_list_id"`
+	ClubId      string `json:"club_id"`
+}
+
+//Marks club already read by user in current view list.
+func markClubReadInViewList(ctx *gin.Context) {
+	//get request user id
+	userId := ctx.GetHeader("user-id")
+	if userId == "" {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, nil))
+		return
+	}
+
+	//get request params
+	markReq := new(MarkClubReadInViewListRequest)
+	if err := ctx.ShouldBindJSON(markReq); err != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		log.Error(err)
+		return
+	}
+	//check user and view list
+	_, err := db.GetViewList(userId, markReq.ViewListId)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	//check club
+	_, err = db.GetClubInfoByClubId(markReq.ClubId)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//save read info into DB
+	viewLog := db.ViewListLog{
+		ViewListID: markReq.ViewListId,
+		LoopUID: userId,
+		ClubID: markReq.ClubId,
+	}
+	err = viewLog.Insert()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+}
+
+//Returns a new club view list and corresponding id.
+// Club view list is current all published clubs that sequence shuffled.
+func getNewViewList(ctx *gin.Context) {
+	//check user
+	user, err := getAppUser(ctx)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	//create new view list info into
+	viewList := db.ViewList{
+		LoopUID: user.LoopUID,
+		ViewListID: uuid.New().String(),
+	}
+	err = viewList.Insert()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//Get all club infos attached with current user favourite or not
+	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//construct response club info from DB query result
+	responseClubs, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//shuffle response club infos
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(responseClubs), func(i, j int) { responseClubs[i], responseClubs[j] = responseClubs[j], responseClubs[i] })
+
+	//construct response view list
+	viewListPost := ViewListPost{
+		ViewListId: viewList.ViewListID,
+		ViewList: responseClubs,
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))
+}
+
+type ViewListPost struct {
+	ViewListId  string
+	ViewList []FavouriteClubInfo
 }
 
 func getClubInfoOfGivenTags(ctx *gin.Context) {
@@ -167,12 +351,12 @@ func getClubInfoOfGivenTags(ctx *gin.Context) {
 		return
 	}
 
-	responseInfo, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	responseClubs, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 	}
 
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseInfo))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseClubs))
 }
 
 //FavouriteClubInfo is a assist struct to response club info to app user.
@@ -205,6 +389,7 @@ func GetAllClubs(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseInfo))
 }
 
+//Constructs club response info from DB query result
 func getResponseFromFavouriteClubInfos(favouriteClubInfos []db.FavouriteClubInfo) ([]FavouriteClubInfo, error) {
 	clubInfos := make([]FavouriteClubInfo, 0)
 
@@ -390,7 +575,7 @@ func registerAppUser(ctx *gin.Context) {
 	userPost := new(UserPost)
 	if err := ctx.ShouldBindJSON(userPost); err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-		log.Print(err)
+		log.Error(err)
 		return
 	}
 	if len(userPost.LoopUID) != 64 || len(userPost.LoopUserName) == 0 {
@@ -414,7 +599,7 @@ func registerAppUser(ctx *gin.Context) {
 }
 
 func ifAuthorized(ctx *gin.Context) {
-	_, err := getUser(ctx)
+	_, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -423,7 +608,7 @@ func ifAuthorized(ctx *gin.Context) {
 
 //Returns current login user
 func getCurrUser(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -432,7 +617,7 @@ func getCurrUser(ctx *gin.Context) {
 }
 
 func getAllTags(ctx *gin.Context) {
-	_, err := getUser(ctx)
+	_, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -462,12 +647,12 @@ func serveStaticPicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
-	relativePath := "/tinder-for-clubs-backend/local/static/" + picName
+	relativePath := "/clubphoto/" + picName
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(relativePath))
 }
 
 // Get User information from request context.
-func getUser(ctx *gin.Context) (*db.AdminAccount, error) {
+func getAdminUser(ctx *gin.Context) (*db.AdminAccount, error) {
 	session := sessions.Default(ctx)
 	result := session.Get(USER)
 	if result == nil {
@@ -482,7 +667,7 @@ func getUser(ctx *gin.Context) (*db.AdminAccount, error) {
 
 // Returns the club info of current login user.
 func getClubInfo(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -550,7 +735,7 @@ func getClubTagIdsAndPictureIds(clubID string, pictureIds ...string) ([]string, 
 }
 
 func getAccountByUserId(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -575,7 +760,7 @@ func getAccountByUserId(ctx *gin.Context) {
 }
 
 func listAccounts(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -606,7 +791,7 @@ func genAuthString() string {
 
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -711,7 +896,7 @@ const (
 
 //Club user updates their club info.
 func updateClubInfo(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
@@ -839,7 +1024,7 @@ type UploadPicResponse struct {
 
 // Upload a picture and return an ID
 func uploadSinglePicture(ctx *gin.Context) {
-	account, err := getUser(ctx)
+	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}

@@ -108,6 +108,7 @@ type FavouriteClubInfo struct {
 	Favourite bool
 }
 
+//Get all club infos attached with current user favourite or not
 func GetAllPublishedFavouriteClubInfo(uid string) ([]FavouriteClubInfo, error) {
 	favouriteClubInfos := make([]FavouriteClubInfo, 0)
 	err := DB.Table("club_info c").Select("c.*, f.favourite").
@@ -179,8 +180,8 @@ func GetAllClubTags() ([]ClubTags, error) {
 
 type ClubTagRelationship struct {
 	gorm.Model
-	ClubID string `gorm:"type:varchar(40);unique_index:uni_tag"`
-	TagID  string `gorm:"type:varchar(40);unique_index:uni_tag"`
+	ClubID string `gorm:"type:varchar(40);index"`
+	TagID  string `gorm:"type:varchar(40);index"`
 }
 
 func GetTagRelationshipsByTagIDs(tagIDs []string) ([]ClubTagRelationship, error) {
@@ -201,7 +202,7 @@ func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
 }
 
 func CleanAllTags(txDb *gorm.DB, clubId string) error {
-	err := txDb.Where("clubId = ?", clubId).Delete(&ClubTagRelationship{}).Error
+	err := txDb.Where("club_id = ?", clubId).Delete(&ClubTagRelationship{}).Error
 	return err
 }
 
@@ -225,9 +226,19 @@ func GetAppUserByUid(uid string) (*UserList, error) {
 
 type ViewList struct { //append only
 	gorm.Model
-	LoopUID        string `gorm:"type:varchar(70);unique_index"`
-	ViewListID     string `gorm:"type:varchar(40);unique_index"`
-	timestamp	   time.Time
+	LoopUID        string `gorm:"type:varchar(70);unique_index:uni_view"`
+	ViewListID     string `gorm:"type:varchar(40);unique_index:uni_view"`
+}
+
+func (vl *ViewList) Insert() error {
+	err := DB.Create(vl).Error
+	return err
+}
+
+func GetViewList(uid, listID string) (*ViewList, error) {
+	var viewList ViewList
+	err := DB.Where("loop_uid = ? and view_list_id = ?", uid, listID).Find(&viewList).Error
+	return &viewList, err
 }
 
 type ViewListLog struct { //append only
@@ -235,8 +246,17 @@ type ViewListLog struct { //append only
 	ViewListID     string `gorm:"type:varchar(40);index"`
 	LoopUID        string `gorm:"type:varchar(70);index"`
 	ClubID	   	   string `gorm:"type:varchar(40);index"`
-	Action         string // "like" "skip"
-	Timestamp      time.Time
+}
+
+func (l *ViewListLog) Insert() error {
+	err := DB.Create(l).Error
+	return err
+}
+
+func GetViewedListByID(uid, viewId string) ([]ViewListLog, error) {
+	logs := make([]ViewListLog, 0)
+	err := DB.Where("loop_uid = ? and view_list_id = ?", uid, viewId).Find(&logs).Error
+	return logs, err
 }
 
 type UserFavourite struct { //append and delete

@@ -42,6 +42,14 @@ func Init(dbCred config.DBCredential) {
 	common.ErrFatalLog(err)
 	err = DB.AutoMigrate(&AccountPicture{}).Error
 	common.ErrFatalLog(err)
+	err = DB.AutoMigrate(&UserFavourite{}).Error
+	common.ErrFatalLog(err)
+	err = DB.AutoMigrate(&UserFavouriteLog{}).Error
+	common.ErrFatalLog(err)
+	err = DB.AutoMigrate(&ViewList{}).Error
+	common.ErrFatalLog(err)
+	err = DB.AutoMigrate(&ViewListLog{}).Error
+	common.ErrFatalLog(err)
 }
 
 func Close() {
