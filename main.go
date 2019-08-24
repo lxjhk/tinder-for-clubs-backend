@@ -580,6 +580,7 @@ func getAppUser(ctx *gin.Context) (*db.UserList, error) {
 		return nil, errors.New("user not found")
 	}
 	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return nil, err
 	}
 
