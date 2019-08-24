@@ -126,8 +126,15 @@ func initializeRoutes() {
 }
 
 func logout(ctx *gin.Context) {
-	// delete the user in the session
+	// if user exist in the session
 	session := sessions.Default(ctx)
+	result := session.Get(USER)
+	if result == nil {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, false))
+		return
+	}
+
+	// delete the user in the session
 	session.Delete(USER)
 	if err := session.Save(); err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -573,6 +580,7 @@ func getAppUser(ctx *gin.Context) (*db.UserList, error) {
 		return nil, errors.New("user not found")
 	}
 	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return nil, err
 	}
 
@@ -607,7 +615,7 @@ func registerAppUser(ctx *gin.Context) {
 		log.Print(err)
 		return
 	}
-	if foundUser != nil {
+	if foundUser.LoopUID != "" {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.USER_ALREADY_REGISTERED, nil))
 		return
 	}
@@ -852,7 +860,7 @@ func createNewClubAccount(ctx *gin.Context) {
 	}
 
 	if !account.IsAdmin {
-		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
 	}
 
