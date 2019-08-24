@@ -31,7 +31,7 @@ type GlobalConfiguration struct {
 
 //GetConnectionString Build a database connection
 func (c *DBCredential) GetConnectionString() string {
-	return fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?multiStatements=TRUE&parseTime=true", c.DBUser, c.DBPass, c.DBAddress, c.DBPort, c.DBName)
+	return fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?multiStatements=TRUE&parseTime=true&charset=utf8mb4,utf8", c.DBUser, c.DBPass, c.DBAddress, c.DBPort, c.DBName)
 }
 
 //ConnectionCredentialLogString Get database connection information
