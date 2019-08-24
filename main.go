@@ -860,7 +860,7 @@ func createNewClubAccount(ctx *gin.Context) {
 	}
 
 	if !account.IsAdmin {
-		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
 	}
 
