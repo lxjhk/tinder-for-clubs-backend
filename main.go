@@ -615,7 +615,7 @@ func registerAppUser(ctx *gin.Context) {
 		log.Print(err)
 		return
 	}
-	if foundUser != nil {
+	if foundUser.LoopUID != "" {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.USER_ALREADY_REGISTERED, nil))
 		return
 	}
