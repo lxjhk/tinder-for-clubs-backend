@@ -206,8 +206,10 @@ func CleanAllTags(txDb *gorm.DB, clubId string) error {
 	return err
 }
 
+
 type UserList struct {
 	gorm.Model
+	//consider user may cancel authorization, use index rather than unique index here.
 	LoopUID      string    `gorm:"type:varchar(70);index"`
 	LoopUserName string    `gorm:"type:varchar(50)"`
 	JoinTime     time.Time

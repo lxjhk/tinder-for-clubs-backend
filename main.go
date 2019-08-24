@@ -601,12 +601,23 @@ func registerAppUser(ctx *gin.Context) {
 		return
 	}
 
+	foundUser, err := db.GetAppUserByUid(userPost.LoopUID)
+	if err != nil && !gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		log.Print(err)
+		return
+	}
+	if foundUser != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.USER_ALREADY_REGISTERED, nil))
+		return
+	}
+
 	user := db.UserList{
 		LoopUID: userPost.LoopUID,
 		LoopUserName: userPost.LoopUserName,
 		JoinTime: time.Now(),
 	}
-	err := user.Insert()
+	err = user.Insert()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		log.Print(err)
@@ -930,6 +941,12 @@ type ClubInfoPost struct {
 	LogoId      string   `json:"logo_id"`
 	TagIds      []string `json:"tag_ids"`
 	PictureIds  []string `json:"picture_ids"`
+}
+
+type ClubInfoCountPost struct {
+	ClubInfoPost
+	FavouriteNum int64 `json:"favourite_num"`
+	ViewNum     int64 `json:"view_num"`
 }
 
 const (
