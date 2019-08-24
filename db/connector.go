@@ -34,7 +34,7 @@ func Init(dbCred config.DBCredential) {
 	common.ErrFatalLog(err)
 	err = DB.AutoMigrate(&ClubInfo{}).Error
 	common.ErrFatalLog(err)
-	err = DB.AutoMigrate(&UserList{}).Error
+	err = DB.Set("gorm:table_options", "CHARSET=utf8mb4").AutoMigrate(&UserList{}).Error
 	common.ErrFatalLog(err)
 	err = DB.AutoMigrate(&ClubTags{}).Error
 	common.ErrFatalLog(err)
