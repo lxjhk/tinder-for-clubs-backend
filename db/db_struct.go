@@ -34,15 +34,43 @@ func GetAccountByUserId(userId string) (*AdminAccount, error) {
 	return &account, err
 }
 
+func GetTotalAccountNum() (int64, error) {
+	var num int64
+	err := DB.Table("admin_account").Count(&num).Error
+	return num, err
+}
+
 type AccountInfo struct {
 	AdminAccount
 	ClubName string `json:"club_name"`
 }
 
-func GetAllAccountInfo() ([]AdminAccount, error) {
-	var accounts []AdminAccount
-	DB.Select("").Joins("JOIN club_info")
-	err := DB.Find(&accounts).Error
+type AccountInfoCondition struct {
+	PageRequest
+	SortBy   string
+	SortOrder string
+}
+
+func GetAllAccountInfoByCondition(condition *AccountInfoCondition) ([]AccountInfo, error) {
+	var accounts []AccountInfo
+
+	baseQuery := DB.Select("a.*, c.name").Table("admin_account a").
+		Joins("LEFT JOIN club_info c ON c.club_id = a.club_id")
+
+	if condition != nil {
+		if condition.SortBy != "" {
+			baseQuery = baseQuery.Order("c.created_at " + condition.SortOrder)
+		}
+		//pagination
+		if condition.Offset != 0 {
+			baseQuery = baseQuery.Offset(condition.Offset)
+		}
+		if condition.Limit != 0 {
+			baseQuery = baseQuery.Limit(condition.Limit)
+		}
+	}
+
+	err := baseQuery.Scan(&accounts).Error
 	return accounts, err
 }
 

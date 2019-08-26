@@ -822,7 +822,7 @@ func listAllClubs(ctx *gin.Context) {
 	}
 
 	//get query params
-	condition, pagination, err := constructQueryConditionsFromRequest(ctx)
+	condition, pagination, err := getClubInfoConditionFromRequest(ctx)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
@@ -837,9 +837,24 @@ func listAllClubs(ctx *gin.Context) {
 		return
 	}
 
+	var responseInfo []ClubInfoCountPost
+	for _, clubInfo :=range clubInfos {
+		tagIds, pictureIds, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
+			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
+		if err != nil {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
+
+		post := constructClubInfoCountPost(clubInfo, tagIds, pictureIds)
+		responseInfo = append(responseInfo, *post)
+	}
+
+
 	//response when not pagination query
-	if pagination == false {
-		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfos))
+	if !pagination {
+		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseInfo))
 		return
 	}
 
@@ -855,15 +870,38 @@ func listAllClubs(ctx *gin.Context) {
 		CurrPage: condition.CurrPage,
 		PageSize: condition.Offset,
 		TotalSize: totalSize,
-		TotalPages: getTotalPages(condition.Offset, totalSize),
-		Content: clubInfos,
+		TotalPages: getTotalPages(condition.Limit, totalSize),
+		Content: responseInfo,
 	}
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(pageResult))
 }
 
-func getTotalPages(offset int64, totalSize int64) int64 {
-	pages := totalSize/offset
-	if totalSize % offset != 0 {
+func constructClubInfoCountPost(clubInfo db.ClubInfoCount, tagIDs []string, pictureIDs []string) *ClubInfoCountPost {
+	clubInfoPost := ClubInfoPost{
+		ClubID:      clubInfo.ClubID,
+		Name:        clubInfo.Name,
+		Website:     clubInfo.Website,
+		Email:       clubInfo.Email,
+		GroupLink:   clubInfo.GroupLink,
+		VideoLink:   clubInfo.VideoLink,
+		Published:   clubInfo.Published,
+		Description: clubInfo.Description,
+		LogoId:      clubInfo.LogoID,
+		TagIds:      tagIDs,
+		PictureIds:  pictureIDs,
+	}
+	post := ClubInfoCountPost{
+		ClubInfoPost: clubInfoPost,
+		FavouriteNum: clubInfo.FavouriteNum,
+		ViewNum: clubInfo.ViewNum,
+	}
+	return &post
+}
+
+
+func getTotalPages(limit int64, totalSize int64) int64 {
+	pages := totalSize/limit
+	if totalSize % limit != 0 {
 		pages = pages + 1
 	}
 	return pages
@@ -885,21 +923,43 @@ func tryToGetPageRequest(ctx *gin.Context) (*db.PageRequest, bool, error) {
 		}
 		if currPage > 0 && pageSize > 0 {
 			pageRequest.CurrPage = currPage
-			pageRequest.Offset = pageSize
-			pageRequest.Limit = (currPage - 1)*pageSize
+			pageRequest.Offset = (currPage - 1)*pageSize
+			pageRequest.Limit = pageSize
 			pagination = true
 		}
 	}
 	return &pageRequest, pagination, nil
 }
 
-func constructQueryConditionsFromRequest(ctx *gin.Context) (*db.ClubInfoCondition, bool, error) {
+func getAccountInfoConditionFromRequest(ctx *gin.Context) (*db.AccountInfoCondition, bool, error)  {
+	var condition db.AccountInfoCondition
+	pageRequest, pagination, err := tryToGetPageRequest(ctx)
+	if err != nil {
+		return &condition, pagination, err
+	}
+	condition.PageRequest = *pageRequest
+
+	//if order by create time set
+	sortBy := ctx.Query("sort_by")
+	if sortBy == "created_at" {
+		condition.SortBy = sortBy
+	}
+
+	//if sort order set
+	sortOrder := ctx.Query("sort_order")
+	if sortOrder == "asc" || sortOrder == "desc" {
+		condition.SortOrder = sortOrder
+	}
+
+	return &condition, pagination, nil
+}
+
+func getClubInfoConditionFromRequest(ctx *gin.Context) (*db.ClubInfoCondition, bool, error) {
 	var condition db.ClubInfoCondition
 	pageRequest, pagination, err := tryToGetPageRequest(ctx)
 	if err != nil {
 		return &condition, pagination, err
 	}
-
 	condition.PageRequest = *pageRequest
 
 	//if published set
@@ -959,24 +1019,41 @@ func listAllAccounts(ctx *gin.Context) {
 		return
 	}
 
-	pageRequest, pagination, err := tryToGetPageRequest(ctx)
+	//query account info
+	condition, pagination, err := getAccountInfoConditionFromRequest(ctx)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
-	//TODO  account 分页
-	_ = pageRequest
 
-	_ = pagination
-
-	accounts, err := db.GetAllAccountInfo()
+	accounts, err := db.GetAllAccountInfoByCondition(condition)
 	if err != nil {
+		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(accounts))
+	if !pagination {
+		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(accounts))
+		return
+	}
+
+	//this is a pagination query
+	totalSize, err := db.GetTotalAccountNum()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	pageResult := PageResult{
+		CurrPage: condition.CurrPage,
+		PageSize: condition.Offset,
+		TotalSize: totalSize,
+		TotalPages: getTotalPages(condition.Limit, totalSize),
+		Content: accounts,
+	}
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(pageResult))
 }
 
 // Generate a new auth string
