@@ -1,6 +1,7 @@
 package db
 
 import (
+	"log"
 	"testing"
 	"tinder-for-clubs-backend/config"
 )
@@ -16,6 +17,31 @@ func initTestConfiguration() *config.GlobalConfiguration {
 		},
 	}
 	return &configuration
+}
+
+func TestGetClubInfoCountsByCondition(t *testing.T) {
+	configuration := initTestConfiguration()
+	Init(configuration.DBCredential)
+
+	condition := &ClubInfoCondition{
+		Published:"true",
+		SortBy: "created_at",
+		SortOrder: "DESC",
+		Limit:2,
+		Offset:2,
+	}
+
+	counts, err := GetClubInfoCountsByCondition(condition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = counts
+
+	totalSize, err := GetClubInfoNumByCondition(condition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println(totalSize)
 }
 
 func TestClubInfo_Update(t *testing.T) {
