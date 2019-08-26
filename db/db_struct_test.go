@@ -19,6 +19,19 @@ func initTestConfiguration() *config.GlobalConfiguration {
 	return &configuration
 }
 
+func TestGetAllAccountInfoByCondition(t *testing.T)  {
+	configuration := initTestConfiguration()
+	Init(configuration.DBCredential)
+
+	accounts, err := GetAllAccountInfoByCondition(nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = accounts
+}
+
 func TestGetClubInfoCountsByCondition(t *testing.T) {
 	configuration := initTestConfiguration()
 	Init(configuration.DBCredential)
@@ -27,8 +40,6 @@ func TestGetClubInfoCountsByCondition(t *testing.T) {
 		Published:"true",
 		SortBy: "created_at",
 		SortOrder: "DESC",
-		Limit:2,
-		Offset:2,
 	}
 
 	counts, err := GetClubInfoCountsByCondition(condition)
