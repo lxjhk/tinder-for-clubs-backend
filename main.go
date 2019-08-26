@@ -15,10 +15,13 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	log "github.com/sirupsen/logrus"
+	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 	"tinder-for-clubs-backend/common"
@@ -79,19 +82,19 @@ func initializeRoutes() {
 
 	// Admin only endpoints
 	router.POST("/admin/account/create", createNewClubAccount)
-	router.GET("/admin/account/all", listAccounts)
+	router.GET("/admin/account/all", listAllAccounts)
 	router.GET("/admin/account/user/:userId", getAccountByUserId)
+	router.GET("/admin/clubinfo/all",listAllClubs)
 
 	// Club manager endpoints
 	router.GET("/account", getCurrUser)
 	router.POST("/club/uploadpicture", uploadSinglePicture)
 	router.POST("/club/info", updateClubInfo)
-	router.GET("/club/info", getClubInfo)
+	router.GET("/club/info", getSelfClubInfo)
 	router.GET("/club/tags", adminGetAllTags)
 
 	// MiniApp endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
-	router.Static("/clubphoto",globalConfig.General.PictureStoragePath)
 
 	router.POST("/app/register", registerAppUser)
 	router.GET("/app/userinfo", getAppUserInfo)
@@ -672,7 +675,8 @@ func serveStaticPicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PICTURE_ID, nil))
 		return
 	}
-	picName, err := db.GetPictureNameById(pictureID)
+
+	fileName, err := db.GetPictureNameById(pictureID)
 	if gorm.IsRecordNotFoundError(err) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PICTURE_ID, nil))
 		return
@@ -681,8 +685,27 @@ func serveStaticPicture(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
-	relativePath := "/clubphoto/" + picName
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(relativePath))
+
+	basePath := path.Join(globalConfig.General.PictureStoragePath, fileName)
+	img, err := os.Open(basePath)
+	if err != nil {
+		if strings.HasSuffix(err.Error(),"The system cannot find the file specified.") {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.NOT_FOUND, nil))
+			return
+		}
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+	defer img.Close()
+
+	ctx.Writer.Header().Set("Content-Type","image/jpeg")
+	_, err = io.Copy(ctx.Writer, img)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
 }
 
 // Get User information from request context.
@@ -700,7 +723,7 @@ func getAdminUser(ctx *gin.Context) (*db.AdminAccount, error) {
 }
 
 // Returns the club info of current login user.
-func getClubInfo(ctx *gin.Context) {
+func getSelfClubInfo(ctx *gin.Context) {
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
@@ -778,6 +801,128 @@ func getClubTagIdsAndPictureIds(clubID string, picIds ...string) ([]string, []st
 	return tagIDs, pictureIds, nil
 }
 
+type PageResult struct {
+	CurrPage   int64 `json:"curr_page"`
+	PageSize   int64 `json:"page_size"`
+	TotalSize  int64 `json:"total_size"`
+	TotalPages int64 `json:"total_pages"`
+	Content    interface{} `json:"content"`
+}
+
+func listAllClubs(ctx *gin.Context) {
+	//check if this is admin
+	account, err := getAdminUser(ctx)
+	if err != nil {
+		return
+	}
+
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	//get query params
+	condition, pagination, err := constructQueryConditionsFromRequest(ctx)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
+	//query by given condition
+	clubInfos, err := db.GetClubInfoCountsByCondition(condition)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	//response when not pagination query
+	if pagination == false {
+		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfos))
+		return
+	}
+
+	//this is pagination query, get total size
+	totalSize, err := db.GetClubInfoNumByCondition(condition)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	pageResult := PageResult{
+		CurrPage: condition.CurrPage,
+		PageSize: condition.Offset,
+		TotalSize: totalSize,
+		TotalPages: getTotalPages(condition.Offset, totalSize),
+		Content: clubInfos,
+	}
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(pageResult))
+}
+
+func getTotalPages(offset int64, totalSize int64) int64 {
+	pages := totalSize/offset
+	if totalSize % offset != 0 {
+		pages = pages + 1
+	}
+	return pages
+}
+
+func tryToGetPageRequest(ctx *gin.Context) (*db.PageRequest, bool, error) {
+	var pageRequest db.PageRequest
+	var pagination bool
+	currPageStr := ctx.Query("curr_page")
+	pageSizeStr := ctx.Query("page_size")
+	if currPageStr != "" && pageSizeStr != "" {
+		currPage, err := strconv.ParseInt(currPageStr, 10, 64)
+		if err != nil {
+			return &pageRequest, pagination, err
+		}
+		pageSize, err := strconv.ParseInt(pageSizeStr, 10, 64)
+		if err != nil {
+			return &pageRequest, pagination, err
+		}
+		if currPage > 0 && pageSize > 0 {
+			pageRequest.CurrPage = currPage
+			pageRequest.Offset = pageSize
+			pageRequest.Limit = (currPage - 1)*pageSize
+			pagination = true
+		}
+	}
+	return &pageRequest, pagination, nil
+}
+
+func constructQueryConditionsFromRequest(ctx *gin.Context) (*db.ClubInfoCondition, bool, error) {
+	var condition db.ClubInfoCondition
+	pageRequest, pagination, err := tryToGetPageRequest(ctx)
+	if err != nil {
+		return &condition, pagination, err
+	}
+
+	condition.PageRequest = *pageRequest
+
+	//if published set
+	published := ctx.Query("published")
+	if published == "true" || published == "false" {
+		condition.Published = published
+	}
+
+	//if order by create time set
+	sortBy := ctx.Query("sort_by")
+	if sortBy == "created_at" {
+		condition.SortBy = sortBy
+	}
+
+	//if sort order set
+	sortOrder := ctx.Query("sort_order")
+	if sortOrder == "asc" || sortOrder == "desc" {
+		condition.SortOrder = sortOrder
+	}
+
+	return &condition, pagination, nil
+}
+
 func getAccountByUserId(ctx *gin.Context) {
 	account, err := getAdminUser(ctx)
 	if err != nil {
@@ -803,7 +948,7 @@ func getAccountByUserId(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
-func listAccounts(ctx *gin.Context) {
+func listAllAccounts(ctx *gin.Context) {
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
@@ -814,7 +959,18 @@ func listAccounts(ctx *gin.Context) {
 		return
 	}
 
-	accounts, err := db.GetAllAccounts()
+	pageRequest, pagination, err := tryToGetPageRequest(ctx)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	//TODO  account 分页
+	_ = pageRequest
+
+	_ = pagination
+
+	accounts, err := db.GetAllAccountInfo()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
@@ -833,6 +989,12 @@ func genAuthString() string {
 	return str1 + str2
 }
 
+type NewClubAccountPost struct {
+	Email      string `json:"email"`
+	PhoneNum   string `json:"phone_num"`
+	Note       string `json:"note"`
+}
+
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
 	account, err := getAdminUser(ctx)
@@ -845,11 +1007,25 @@ func createNewClubAccount(ctx *gin.Context) {
 		return
 	}
 
+	//obtain and simply check request body param
+	newClub := new(NewClubAccountPost)
+	if err :=ctx.ShouldBindJSON(newClub); err != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if len(newClub.Email) == 0 || len(newClub.PhoneNum) == 0 || len(newClub.Note) == 0 || len(newClub.Note) > 200 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
 	//construct account and club info
 	clubAccount := db.AdminAccount{
 		AccountID:  uuid.New().String(),
 		AuthString: genAuthString(),
 		ClubID:     uuid.New().String(),
+		Email:      newClub.Email,
+		PhoneNum:   newClub.PhoneNum,
+		Note:       newClub.Note,
 		IsAdmin:    false,
 	}
 
