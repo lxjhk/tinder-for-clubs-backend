@@ -54,7 +54,7 @@ type AccountInfoCondition struct {
 func GetAllAccountInfoByCondition(condition *AccountInfoCondition) ([]AccountInfo, error) {
 	var accounts []AccountInfo
 
-	baseQuery := DB.Select("a.*, c.name").Table("admin_account a").
+	baseQuery := DB.Select("a.*, c.name club_name").Table("admin_account a").
 		Joins("LEFT JOIN club_info c ON c.club_id = a.club_id")
 
 	if condition != nil {
