@@ -1214,6 +1214,18 @@ func updateClubInfo(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.EMAIL_TOO_LONG, nil))
 		return
 	}
+	if len(clubInfoPost.Description) > 2000 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.DESC_TOO_LONG, nil))
+		return
+	}
+	if len(clubInfoPost.VideoLink) > 200 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.VIDEO_LINK_TOO_LONG, nil))
+		return
+	}
+	if len(clubInfoPost.GroupLink) > 100 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
 
 	// Club tags
 	if len(clubInfoPost.TagIds) > 0 {
