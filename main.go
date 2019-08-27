@@ -104,8 +104,8 @@ func initializeRoutes() {
 	router.GET("/app/clubs/all", GetAllClubs)
 	router.GET("/app/tagfilter", getClubInfoOfGivenTags)
 	router.GET("/app/tages", appGetAllTags)
-	router.GET("/app/viewlist/unreadlist/:viewListID", getUnreadViewList)
-	router.GET("/app/viewlist/new", getNewViewList)
+	router.GET("/app/viewlist/unreadlist", getUnreadViewList)
+	router.GET("/app/viewlist/new", createNewViewList)
 	router.PUT("/app/viewlist/markread", markClubReadInViewList)
 }
 
@@ -136,9 +136,10 @@ func getUnreadViewList(ctx *gin.Context) {
 		return
 	}
 
-	viewListID := ctx.Param("viewListID")
-	if viewListID == "" {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+	viewList, err := db.GetLatestViewListByUID(user.LoopUID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
 
@@ -163,7 +164,7 @@ func getUnreadViewList(ctx *gin.Context) {
 	rand.Shuffle(len(responseClubs), func(i, j int) { responseClubs[i], responseClubs[j] = responseClubs[j], responseClubs[i] })
 
 	//get read club ids
-	logs, err := db.GetViewedListByID(user.LoopUID, viewListID)
+	logs, err := db.GetViewedListByID(user.LoopUID, viewList.ViewListID)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -187,45 +188,38 @@ func getUnreadViewList(ctx *gin.Context) {
 	}
 
 	//construct response unread view list
-	viewListPost := ViewListPost{
-		ViewListId: viewListID,
-		ViewList: responseUnreadClubs,
-	}
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseUnreadClubs))
 }
 
 type MarkClubReadInViewListRequest struct {
-	ViewListId  string `json:"view_list_id"`
 	ClubId      string `json:"club_id"`
 }
 
 //Marks club already read by user in current view list.
 func markClubReadInViewList(ctx *gin.Context) {
-	//get request user id
-	userId := ctx.GetHeader("user-id")
-	if userId == "" {
-		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NOT_AUTHORIZED, nil))
+	//check user
+	user, err := getAppUser(ctx)
+	if err != nil {
+		log.Error(err)
 		return
 	}
 
 	//get request params
-	markReq := new(MarkClubReadInViewListRequest)
-	if err := ctx.ShouldBindJSON(markReq); err != nil {
+	var markReq MarkClubReadInViewListRequest
+	if err := ctx.ShouldBindJSON(&markReq); err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		log.Error(err)
 		return
 	}
+
 	//check user and view list
-	_, err := db.GetViewList(userId, markReq.ViewListId)
-	if gorm.IsRecordNotFoundError(err) {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-		return
-	}
+	viewList, err := db.GetLatestViewListByUID(user.LoopUID)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
+
 	//check club
 	_, err = db.GetClubInfoByClubId(markReq.ClubId)
 	if gorm.IsRecordNotFoundError(err) {
@@ -240,8 +234,8 @@ func markClubReadInViewList(ctx *gin.Context) {
 
 	//save read info into DB
 	viewLog := db.ViewListLog{
-		ViewListID: markReq.ViewListId,
-		LoopUID: userId,
+		ViewListID: viewList.ViewListID,
+		LoopUID: user.LoopUID,
 		ClubID: markReq.ClubId,
 	}
 	err = viewLog.Insert()
@@ -256,7 +250,7 @@ func markClubReadInViewList(ctx *gin.Context) {
 
 //Returns a new club view list and corresponding id.
 // Club view list is current all published clubs that sequence shuffled.
-func getNewViewList(ctx *gin.Context) {
+func createNewViewList(ctx *gin.Context) {
 	//check user
 	user, err := getAppUser(ctx)
 	if err != nil {
@@ -269,14 +263,19 @@ func getNewViewList(ctx *gin.Context) {
 		LoopUID: user.LoopUID,
 		ViewListID: uuid.New().String(),
 	}
-	err = viewList.Insert()
+	txDb := db.DB.Begin()
+	err = viewList.Insert(txDb)
 	if err != nil {
+		txDb.Rollback()
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
+	txDb.Commit()
 
-	//Get all club infos attached with current user favourite or not
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+
+	/*//Get all club infos attached with current user favourite or not
 	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
 	if err != nil {
 		log.Error(err)
@@ -302,13 +301,9 @@ func getNewViewList(ctx *gin.Context) {
 		ViewList: responseClubs,
 	}
 
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))*/
 }
 
-type ViewListPost struct {
-	ViewListId  string `json:"view_list_id"`
-	ViewList []FavouriteClubInfo `json:"view_list"`
-}
 
 func getClubInfoOfGivenTags(ctx *gin.Context) {
 	//check user
@@ -604,17 +599,34 @@ func registerAppUser(ctx *gin.Context) {
 		return
 	}
 
+	//construct new use and view list
 	user := db.UserList{
 		LoopUID: userPost.LoopUID,
 		LoopUserName: userPost.LoopUserName,
 		JoinTime: time.Now(),
 	}
-	err = user.Insert()
+
+	txDb := db.DB.Begin()
+	err = user.Insert(txDb)
 	if err != nil {
+		txDb.Rollback()
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		log.Print(err)
 		return
 	}
+
+	viewList := db.ViewList{
+		LoopUID: user.LoopUID,
+		ViewListID: uuid.New().String(),
+	}
+	err = viewList.Insert(txDb)
+	if err != nil {
+		txDb.Rollback()
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		log.Print(err)
+		return
+	}
+	txDb.Commit()
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
@@ -868,7 +880,7 @@ func listAllClubs(ctx *gin.Context) {
 
 	pageResult := PageResult{
 		CurrPage: condition.CurrPage,
-		PageSize: condition.Offset,
+		PageSize: condition.PageSize,
 		TotalSize: totalSize,
 		TotalPages: getTotalPages(condition.Limit, totalSize),
 		Content: responseInfo,
@@ -923,6 +935,7 @@ func tryToGetPageRequest(ctx *gin.Context) (*db.PageRequest, bool, error) {
 		}
 		if currPage > 0 && pageSize > 0 {
 			pageRequest.CurrPage = currPage
+			pageRequest.PageSize = pageSize
 			pageRequest.Offset = (currPage - 1)*pageSize
 			pageRequest.Limit = pageSize
 			pagination = true
@@ -1048,7 +1061,7 @@ func listAllAccounts(ctx *gin.Context) {
 	}
 	pageResult := PageResult{
 		CurrPage: condition.CurrPage,
-		PageSize: condition.Offset,
+		PageSize: condition.PageSize,
 		TotalSize: totalSize,
 		TotalPages: getTotalPages(condition.Limit, totalSize),
 		Content: accounts,
@@ -1222,7 +1235,14 @@ func updateClubInfo(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.CLUB_TAG_NUM_ABOVE_LIMIT, nil))
 		return
 	}
-	//TODO check the params rest
+	if len(clubInfoPost.Website) > 100 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.WEB_SITE_TOO_LONG, nil))
+		return
+	}
+	if len(clubInfoPost.Email) > 100 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.EMAIL_TOO_LONG, nil))
+		return
+	}
 
 	// Club tags
 	if len(clubInfoPost.TagIds) > 0 {
