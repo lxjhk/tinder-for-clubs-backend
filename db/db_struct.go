@@ -321,8 +321,8 @@ type UserList struct {
 	JoinTime     time.Time
 }
 
-func (ul *UserList) Insert(txDb *gorm.DB) error {
-	err := txDb.Create(ul).Error
+func (ul *UserList) Insert() error {
+	err := DB.Create(ul).Error
 	return err
 }
 
@@ -345,8 +345,8 @@ func GetLatestViewListByUID(uid string) (*ViewList, error) {
 	return &viewList, err
 }
 
-func (vl *ViewList) Insert(txDb *gorm.DB) error {
-	err := txDb.Create(vl).Error
+func (vl *ViewList) Insert() error {
+	err := DB.Create(vl).Error
 	return err
 }
 
