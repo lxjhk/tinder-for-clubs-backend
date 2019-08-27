@@ -136,7 +136,13 @@ func getUnreadViewList(ctx *gin.Context) {
 		return
 	}
 
+	//get user view list, returns empty list when view list not found.
 	viewList, err := db.GetLatestViewListByUID(user.LoopUID)
+	if gorm.IsRecordNotFoundError(err) {
+		emptyResp := make([]FavouriteClubInfo, 0)
+		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(emptyResp))
+		return
+	}
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -263,15 +269,12 @@ func createNewViewList(ctx *gin.Context) {
 		LoopUID: user.LoopUID,
 		ViewListID: uuid.New().String(),
 	}
-	txDb := db.DB.Begin()
-	err = viewList.Insert(txDb)
+	err = viewList.Insert()
 	if err != nil {
-		txDb.Rollback()
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		return
 	}
-	txDb.Commit()
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
@@ -571,34 +574,30 @@ func registerAppUser(ctx *gin.Context) {
 		return
 	}
 
-	//construct new use and view list
+	//register new use
 	user := db.UserList{
 		LoopUID: userPost.LoopUID,
 		LoopUserName: userPost.LoopUserName,
 		JoinTime: time.Now(),
 	}
-
-	txDb := db.DB.Begin()
-	err = user.Insert(txDb)
+	err = user.Insert()
 	if err != nil {
-		txDb.Rollback()
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		log.Print(err)
+		log.Error(err)
 		return
 	}
 
+	//try to create view list
 	viewList := db.ViewList{
 		LoopUID: user.LoopUID,
 		ViewListID: uuid.New().String(),
 	}
-	err = viewList.Insert(txDb)
+	err = viewList.Insert()
+	//ignore error when fail to create view list
 	if err != nil {
-		txDb.Rollback()
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		log.Print(err)
+		log.Error("fail to create view list when register, error:",err)
 		return
 	}
-	txDb.Commit()
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
