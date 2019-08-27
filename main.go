@@ -78,13 +78,14 @@ func initializeRoutes() {
 	//For admin and club managers to login
 	router.POST("/login", Login)
 	router.DELETE("/logout", logout)
-	router.GET("/authorized",ifAuthorized)
+	router.GET("/authorized", ifAuthorized)
 
 	// Admin only endpoints
 	router.POST("/admin/account/create", createNewClubAccount)
+	router.PUT("/admin/account", updateAccountInfo)
 	router.GET("/admin/account/all", listAllAccounts)
 	router.GET("/admin/account/user/:userId", getAccountByUserId)
-	router.GET("/admin/clubinfo/all",listAllClubs)
+	router.GET("/admin/clubinfo/all", listAllClubs)
 
 	// Club manager endpoints
 	router.GET("/account", getCurrUser)
@@ -107,6 +108,62 @@ func initializeRoutes() {
 	router.GET("/app/viewlist/unreadlist", getUnreadViewList)
 	router.GET("/app/viewlist/new", createNewViewList)
 	router.PUT("/app/viewlist/markread", markClubReadInViewList)
+}
+
+type AccountPost struct {
+	AccountId string `json:"account_id"`
+	Email     string `json:"email"`
+	PhoneNum  string `json:"phone_num"`
+	Note      string `json:"note"`
+}
+
+func updateAccountInfo(ctx *gin.Context) {
+	account, err := getAdminUser(ctx)
+	if err != nil {
+		return
+	}
+
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	var accountReq AccountPost
+	if err := ctx.ShouldBindJSON(&accountReq);err!=nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		log.Error(err)
+		return
+	}
+	if account.AccountID == "" {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
+	_, err = db.GetAccountByUserId(accountReq.AccountId)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	adminAccount := db.AdminAccount{
+		AccountID: accountReq.AccountId,
+		Email:  accountReq.Email,
+		PhoneNum: accountReq.PhoneNum,
+		Note: accountReq.Note,
+	}
+	err = adminAccount.Update()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
 func logout(ctx *gin.Context) {
@@ -179,9 +236,9 @@ func getUnreadViewList(ctx *gin.Context) {
 
 	//remove clubs already read in response clubs
 	responseUnreadClubs := make([]FavouriteClubInfo, 0)
-	for _, club :=range responseClubs {
+	for _, club := range responseClubs {
 		var read bool
-		for _, l :=range logs {
+		for _, l := range logs {
 			if club.ClubID == l.ClubID {
 				read = true
 				break
@@ -198,7 +255,7 @@ func getUnreadViewList(ctx *gin.Context) {
 }
 
 type MarkClubReadInViewListRequest struct {
-	ClubId      string `json:"club_id"`
+	ClubId string `json:"club_id"`
 }
 
 //Marks club already read by user in current view list.
@@ -241,8 +298,8 @@ func markClubReadInViewList(ctx *gin.Context) {
 	//save read info into DB
 	viewLog := db.ViewListLog{
 		ViewListID: viewList.ViewListID,
-		LoopUID: user.LoopUID,
-		ClubID: markReq.ClubId,
+		LoopUID:    user.LoopUID,
+		ClubID:     markReq.ClubId,
 	}
 	err = viewLog.Insert()
 	if err != nil {
@@ -266,7 +323,7 @@ func createNewViewList(ctx *gin.Context) {
 
 	//create new view list info into
 	viewList := db.ViewList{
-		LoopUID: user.LoopUID,
+		LoopUID:    user.LoopUID,
 		ViewListID: uuid.New().String(),
 	}
 	err = viewList.Insert()
@@ -278,7 +335,6 @@ func createNewViewList(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
-
 
 func getClubInfoOfGivenTags(ctx *gin.Context) {
 	//check user
@@ -315,7 +371,7 @@ func getClubInfoOfGivenTags(ctx *gin.Context) {
 	}
 	//unite club ids from clubs
 	clubIDs := make([]string, 0)
-	for _, relation :=range relationships {
+	for _, relation := range relationships {
 		clubIDs = append(clubIDs, relation.ClubID)
 	}
 
@@ -367,7 +423,7 @@ func GetAllClubs(ctx *gin.Context) {
 func getResponseFromFavouriteClubInfos(favouriteClubInfos []db.FavouriteClubInfo) ([]FavouriteClubInfo, error) {
 	clubInfos := make([]FavouriteClubInfo, 0)
 
-	for _, clubInfo :=range favouriteClubInfos {
+	for _, clubInfo := range favouriteClubInfos {
 		tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
 			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
 		if err != nil {
@@ -389,7 +445,7 @@ func getResponseFromFavouriteClubInfos(favouriteClubInfos []db.FavouriteClubInfo
 		}
 		responseInfo := FavouriteClubInfo{
 			ClubInfoPost: infoPost,
-			Favourite: clubInfo.Favourite,
+			Favourite:    clubInfo.Favourite,
 		}
 		clubInfos = append(clubInfos, responseInfo)
 	}
@@ -441,8 +497,8 @@ func doFavouriteClub(ctx *gin.Context, favourite bool) {
 func setFavouriteStateAndLogIntoDB(loopUID, clubID string, like bool) error {
 	//insert favourite club, rolls back when error occurs
 	favourite := db.UserFavourite{
-		LoopUID: loopUID,
-		ClubID: clubID,
+		LoopUID:   loopUID,
+		ClubID:    clubID,
 		Favourite: like,
 	}
 
@@ -457,15 +513,15 @@ func setFavouriteStateAndLogIntoDB(loopUID, clubID string, like bool) error {
 	var action string
 	if like {
 		action = db.FAVORITE_ACTION
-	}else {
+	} else {
 		action = db.UNFAVORITE_ACTION
 	}
 
 	//insert log, rolls back when error occurs
 	l := db.UserFavouriteLog{
 		LoopUID: loopUID,
-		ClubID: clubID,
-		Action: action,
+		ClubID:  clubID,
+		Action:  action,
 	}
 	err = l.Insert(txDb)
 	if err != nil {
@@ -488,7 +544,7 @@ func getFavouriteClubList(ctx *gin.Context) {
 	//get favorite club ids
 	favourites, err := db.GetUserFavouritesByUID(user.LoopUID)
 	clubIds := make([]string, 0)
-	for _, favourite :=range favourites {
+	for _, favourite := range favourites {
 		clubIds = append(clubIds, favourite.ClubID)
 	}
 
@@ -497,7 +553,7 @@ func getFavouriteClubList(ctx *gin.Context) {
 
 	//construct response info
 	clubInfoResponses := make([]ClubInfoPost, 0)
-	for _,clubInfo :=range clubInfos {
+	for _, clubInfo := range clubInfos {
 		tagIDs, pictureIDs, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
 			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
 		if err != nil {
@@ -576,9 +632,9 @@ func registerAppUser(ctx *gin.Context) {
 
 	//register new use
 	user := db.UserList{
-		LoopUID: userPost.LoopUID,
+		LoopUID:      userPost.LoopUID,
 		LoopUserName: userPost.LoopUserName,
-		JoinTime: time.Now(),
+		JoinTime:     time.Now(),
 	}
 	err = user.Insert()
 	if err != nil {
@@ -589,13 +645,13 @@ func registerAppUser(ctx *gin.Context) {
 
 	//try to create view list
 	viewList := db.ViewList{
-		LoopUID: user.LoopUID,
+		LoopUID:    user.LoopUID,
 		ViewListID: uuid.New().String(),
 	}
 	err = viewList.Insert()
 	//ignore error when fail to create view list
 	if err != nil {
-		log.Error("fail to create view list when register, error:",err)
+		log.Error("fail to create view list when register, error:", err)
 		return
 	}
 
@@ -620,7 +676,7 @@ func getCurrUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(account))
 }
 
-func appGetAllTags(ctx *gin.Context)  {
+func appGetAllTags(ctx *gin.Context) {
 	_, err := getAppUser(ctx)
 	if err != nil {
 		return
@@ -636,7 +692,7 @@ func appGetAllTags(ctx *gin.Context)  {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(tags))
 }
 
-func adminGetAllTags(ctx *gin.Context)  {
+func adminGetAllTags(ctx *gin.Context) {
 	_, err := getAdminUser(ctx)
 	if err != nil {
 		return
@@ -672,7 +728,7 @@ func serveStaticPicture(ctx *gin.Context) {
 	basePath := path.Join(globalConfig.General.PictureStoragePath, fileName)
 	img, err := os.Open(basePath)
 	if err != nil {
-		if strings.HasSuffix(err.Error(),"The system cannot find the file specified.") {
+		if strings.HasSuffix(err.Error(), "The system cannot find the file specified.") {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.NOT_FOUND, nil))
 			return
@@ -683,7 +739,7 @@ func serveStaticPicture(ctx *gin.Context) {
 	}
 	defer img.Close()
 
-	ctx.Writer.Header().Set("Content-Type","image/jpeg")
+	ctx.Writer.Header().Set("Content-Type", "image/jpeg")
 	_, err = io.Copy(ctx.Writer, img)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -774,7 +830,7 @@ func getClubTagIdsAndPictureIds(clubID string, picIds ...string) ([]string, []st
 
 	//Unite non-nil pic ids
 	pictureIds := make([]string, 0)
-	for _, picId :=range picIds {
+	for _, picId := range picIds {
 		if picId == "" {
 			break
 		}
@@ -785,10 +841,10 @@ func getClubTagIdsAndPictureIds(clubID string, picIds ...string) ([]string, []st
 }
 
 type PageResult struct {
-	CurrPage   int64 `json:"curr_page"`
-	PageSize   int64 `json:"page_size"`
-	TotalSize  int64 `json:"total_size"`
-	TotalPages int64 `json:"total_pages"`
+	CurrPage   int64       `json:"curr_page"`
+	PageSize   int64       `json:"page_size"`
+	TotalSize  int64       `json:"total_size"`
+	TotalPages int64       `json:"total_pages"`
 	Content    interface{} `json:"content"`
 }
 
@@ -821,7 +877,7 @@ func listAllClubs(ctx *gin.Context) {
 	}
 
 	var responseInfo []ClubInfoCountPost
-	for _, clubInfo :=range clubInfos {
+	for _, clubInfo := range clubInfos {
 		tagIds, pictureIds, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
 			clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
 		if err != nil {
@@ -833,7 +889,6 @@ func listAllClubs(ctx *gin.Context) {
 		post := constructClubInfoCountPost(clubInfo, tagIds, pictureIds)
 		responseInfo = append(responseInfo, *post)
 	}
-
 
 	//response when not pagination query
 	if !pagination {
@@ -850,11 +905,11 @@ func listAllClubs(ctx *gin.Context) {
 	}
 
 	pageResult := PageResult{
-		CurrPage: condition.CurrPage,
-		PageSize: condition.PageSize,
-		TotalSize: totalSize,
+		CurrPage:   condition.CurrPage,
+		PageSize:   condition.PageSize,
+		TotalSize:  totalSize,
 		TotalPages: getTotalPages(condition.Limit, totalSize),
-		Content: responseInfo,
+		Content:    responseInfo,
 	}
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(pageResult))
 }
@@ -876,15 +931,14 @@ func constructClubInfoCountPost(clubInfo db.ClubInfoCount, tagIDs []string, pict
 	post := ClubInfoCountPost{
 		ClubInfoPost: clubInfoPost,
 		FavouriteNum: clubInfo.FavouriteNum,
-		ViewNum: clubInfo.ViewNum,
+		ViewNum:      clubInfo.ViewNum,
 	}
 	return &post
 }
 
-
 func getTotalPages(limit int64, totalSize int64) int64 {
-	pages := totalSize/limit
-	if totalSize % limit != 0 {
+	pages := totalSize / limit
+	if totalSize%limit != 0 {
 		pages = pages + 1
 	}
 	return pages
@@ -907,7 +961,7 @@ func tryToGetPageRequest(ctx *gin.Context) (*db.PageRequest, bool, error) {
 		if currPage > 0 && pageSize > 0 {
 			pageRequest.CurrPage = currPage
 			pageRequest.PageSize = pageSize
-			pageRequest.Offset = (currPage - 1)*pageSize
+			pageRequest.Offset = (currPage - 1) * pageSize
 			pageRequest.Limit = pageSize
 			pagination = true
 		}
@@ -915,7 +969,7 @@ func tryToGetPageRequest(ctx *gin.Context) (*db.PageRequest, bool, error) {
 	return &pageRequest, pagination, nil
 }
 
-func getAccountInfoConditionFromRequest(ctx *gin.Context) (*db.AccountInfoCondition, bool, error)  {
+func getAccountInfoConditionFromRequest(ctx *gin.Context) (*db.AccountInfoCondition, bool, error) {
 	var condition db.AccountInfoCondition
 	pageRequest, pagination, err := tryToGetPageRequest(ctx)
 	if err != nil {
@@ -1031,11 +1085,11 @@ func listAllAccounts(ctx *gin.Context) {
 		return
 	}
 	pageResult := PageResult{
-		CurrPage: condition.CurrPage,
-		PageSize: condition.PageSize,
-		TotalSize: totalSize,
+		CurrPage:   condition.CurrPage,
+		PageSize:   condition.PageSize,
+		TotalSize:  totalSize,
 		TotalPages: getTotalPages(condition.Limit, totalSize),
-		Content: accounts,
+		Content:    accounts,
 	}
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(pageResult))
 }
@@ -1051,9 +1105,9 @@ func genAuthString() string {
 }
 
 type NewClubAccountPost struct {
-	Email      string `json:"email"`
-	PhoneNum   string `json:"phone_num"`
-	Note       string `json:"note"`
+	Email    string `json:"email"`
+	PhoneNum string `json:"phone_num"`
+	Note     string `json:"note"`
 }
 
 //creates a club account and its club info.
@@ -1070,7 +1124,7 @@ func createNewClubAccount(ctx *gin.Context) {
 
 	//obtain and simply check request body param
 	newClub := new(NewClubAccountPost)
-	if err :=ctx.ShouldBindJSON(newClub); err != nil {
+	if err := ctx.ShouldBindJSON(newClub); err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
@@ -1172,7 +1226,7 @@ type ClubInfoPost struct {
 type ClubInfoCountPost struct {
 	ClubInfoPost
 	FavouriteNum int64 `json:"favourite_num"`
-	ViewNum     int64 `json:"view_num"`
+	ViewNum      int64 `json:"view_num"`
 }
 
 const (
