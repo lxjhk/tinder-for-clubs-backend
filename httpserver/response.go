@@ -33,7 +33,7 @@ var PIC_TOO_LARGE = ResponseCode{Code: 4006, Message: "Picture too large MAX 1MB
 var WEB_SITE_TOO_LONG = ResponseCode{Code: 4007, Message: "Web site length above max limit 100 char!"}
 var EMAIL_TOO_LONG = ResponseCode{Code: 4008, Message: "Email length above max limit 100 char!"}
 var DESC_TOO_LONG = ResponseCode{Code: 4009, Message: "Description length above max limit 2000 char!"}
-var VIDEO_LINK_TOO_LONG = ResponseCode{Code: 4008, Message: "Video link length above max limit 200 char!"}
+var VIDEO_LINK_TOO_LONG = ResponseCode{Code: 4010, Message: "Video link length above max limit 200 char!"}
 
 
 func ConstructResponse(code ResponseCode, payload interface{}) Response {
