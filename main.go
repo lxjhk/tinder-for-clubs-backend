@@ -274,34 +274,6 @@ func createNewViewList(ctx *gin.Context) {
 	txDb.Commit()
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
-
-	/*//Get all club infos attached with current user favourite or not
-	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
-	if err != nil {
-		log.Error(err)
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		return
-	}
-
-	//construct response club info from DB query result
-	responseClubs, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
-	if err != nil {
-		log.Error(err)
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		return
-	}
-
-	//shuffle response club infos
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(responseClubs), func(i, j int) { responseClubs[i], responseClubs[j] = responseClubs[j], responseClubs[i] })
-
-	//construct response view list
-	viewListPost := ViewListPost{
-		ViewListId: viewList.ViewListID,
-		ViewList: responseClubs,
-	}
-
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(viewListPost))*/
 }
 
 
