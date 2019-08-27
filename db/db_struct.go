@@ -24,7 +24,9 @@ func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
 }
 
 func (ac *AdminAccount) Update() error {
-	err := DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).Updates(*ac).Error
+	err := DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).
+		Updates(map[string]interface{}{"email":ac.Email,"phone_num":ac.PhoneNum,"note":ac.Note}).
+		Error
 	return err
 }
 
