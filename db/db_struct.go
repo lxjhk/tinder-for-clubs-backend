@@ -116,6 +116,7 @@ type ClubInfoCount struct {
 
 type PageRequest struct {
 	CurrPage int64
+	PageSize int64
 	Offset int64
 	Limit int64
 }
@@ -320,8 +321,8 @@ type UserList struct {
 	JoinTime     time.Time
 }
 
-func (ul *UserList) Insert() error {
-	err := DB.Create(ul).Error
+func (ul *UserList) Insert(txDb *gorm.DB) error {
+	err := txDb.Create(ul).Error
 	return err
 }
 
@@ -338,15 +339,15 @@ type ViewList struct {
 	ViewListID string `gorm:"type:varchar(40);unique_index:uni_view"`
 }
 
-func (vl *ViewList) Insert() error {
-	err := DB.Create(vl).Error
-	return err
+func GetLatestViewListByUID(uid string) (*ViewList, error) {
+	var viewList ViewList
+	err := DB.Where("loop_uid = ?", uid).Last(&viewList).Error
+	return &viewList, err
 }
 
-func GetViewList(uid, listID string) (*ViewList, error) {
-	var viewList ViewList
-	err := DB.Where("loop_uid = ? and view_list_id = ?", uid, listID).Find(&viewList).Error
-	return &viewList, err
+func (vl *ViewList) Insert(txDb *gorm.DB) error {
+	err := txDb.Create(vl).Error
+	return err
 }
 
 type ViewListLog struct {

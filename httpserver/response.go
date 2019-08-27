@@ -30,7 +30,8 @@ var CLUB_PIC_NUM_ABOVE_LIMIT = ResponseCode{Code: 4003, Message: "Club picture n
 var CLUB_TAG_NUM_ABOVE_LIMIT = ResponseCode{Code: 4004, Message: "Club tag number above max limit!"}
 var INVALID_PICTURE_ID = ResponseCode{Code: 4005, Message: "Invalid picture id!"}
 var PIC_TOO_LARGE = ResponseCode{Code: 4006, Message: "Picture too large MAX 1MB!"}
-
+var WEB_SITE_TOO_LONG = ResponseCode{Code: 4007, Message: "Web site length above max limit 100 char!"}
+var EMAIL_TOO_LONG = ResponseCode{Code: 4008, Message: "Email length above max limit 100 char!"}
 
 
 func ConstructResponse(code ResponseCode, payload interface{}) Response {
