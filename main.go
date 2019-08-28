@@ -114,7 +114,8 @@ func initializeRoutes() {
 }
 
 type UpdateUserPost struct {
-	UserPost
+	NewLoopUID      string `json:"new_loop_uid"`
+	LoopUserName string `json:"loop_user_name"`
 	SrcLoopUID string `json:"src_loop_uid"`
 }
 
@@ -126,7 +127,7 @@ func updateRegisterUser(ctx *gin.Context) {
 		log.Error(err)
 		return
 	}
-	if len(updateUserPost.LoopUID) != 64 ||
+	if len(updateUserPost.NewLoopUID) != 64 ||
 		len(updateUserPost.LoopUserName) == 0 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
@@ -139,7 +140,7 @@ func updateRegisterUser(ctx *gin.Context) {
 	//update registered user, whether source user exists or not
 	var user db.UpdateUser
 	user.SrcLoopUID = updateUserPost.SrcLoopUID
-	user.LoopUID = updateUserPost.LoopUID
+	user.LoopUID = updateUserPost.NewLoopUID
 	user.LoopUserName = updateUserPost.LoopUserName
 	err := user.Update()
 	if err != nil {
