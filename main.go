@@ -97,6 +97,9 @@ func initializeRoutes() {
 	// MiniApp endpoints
 	router.GET("/static/clubphoto/:pictureID", serveStaticPicture)
 
+	// temporary bug repair api
+	router.PUT("/app/register", updateRegisterUser)
+
 	router.POST("/app/register", registerAppUser)
 	router.GET("/app/userinfo", getAppUserInfo)
 	router.GET("/app/favourite", getFavouriteClubList)
@@ -108,6 +111,45 @@ func initializeRoutes() {
 	router.GET("/app/viewlist/unreadlist", getUnreadViewList)
 	router.GET("/app/viewlist/new", createNewViewList)
 	router.PUT("/app/viewlist/markread", markClubReadInViewList)
+}
+
+type UpdateUserPost struct {
+	NewLoopUID      string `json:"new_loop_uid"`
+	LoopUserName string `json:"loop_user_name"`
+	SrcLoopUID string `json:"src_loop_uid"`
+}
+
+func updateRegisterUser(ctx *gin.Context) {
+	//check request param
+	var updateUserPost UpdateUserPost
+	if err := ctx.ShouldBindJSON(&updateUserPost); err != nil {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		log.Error(err)
+		return
+	}
+	if len(updateUserPost.NewLoopUID) != 64 ||
+		len(updateUserPost.LoopUserName) == 0 {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if !strings.HasSuffix(updateUserPost.SrcLoopUID, "00000000000000000000000000000000") {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, "Check source uid format"))
+		return
+	}
+
+	//update registered user, whether source user exists or not
+	var user db.UpdateUser
+	user.SrcLoopUID = updateUserPost.SrcLoopUID
+	user.LoopUID = updateUserPost.NewLoopUID
+	user.LoopUserName = updateUserPost.LoopUserName
+	err := user.Update()
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
 }
 
 type AccountPost struct {
@@ -611,10 +653,6 @@ func registerAppUser(ctx *gin.Context) {
 		return
 	}
 	if len(userPost.LoopUID) != 64 || len(userPost.LoopUserName) == 0 {
-		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
-		return
-	}
-	if len(userPost.LoopUserName) == 0 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}

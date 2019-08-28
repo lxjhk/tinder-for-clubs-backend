@@ -25,7 +25,7 @@ func (ac *AdminAccount) Insert(txDb *gorm.DB) error {
 
 func (ac *AdminAccount) Update() error {
 	err := DB.Model(&AdminAccount{}).Where("account_id = ?", ac.AccountID).
-		Updates(map[string]interface{}{"email":ac.Email,"phone_num":ac.PhoneNum,"note":ac.Note}).
+		Updates(map[string]interface{}{"email": ac.Email, "phone_num": ac.PhoneNum, "note": ac.Note}).
 		Error
 	return err
 }
@@ -49,7 +49,7 @@ type AccountInfo struct {
 
 type AccountInfoCondition struct {
 	PageRequest
-	SortBy   string
+	SortBy    string
 	SortOrder string
 }
 
@@ -113,19 +113,19 @@ type ClubInfo struct {
 type ClubInfoCount struct {
 	ClubInfo
 	FavouriteNum int64 `json:"favourite_num"`
-	ViewNum int64 `json:"view_num"`
+	ViewNum      int64 `json:"view_num"`
 }
 
 type PageRequest struct {
 	CurrPage int64
 	PageSize int64
-	Offset int64
-	Limit int64
+	Offset   int64
+	Limit    int64
 }
 
 type ClubInfoCondition struct {
 	PageRequest
-	SortBy   string
+	SortBy    string
 	SortOrder string
 	Published string
 }
@@ -312,6 +312,18 @@ func (cr *ClubTagRelationship) Insert(txDb *gorm.DB) error {
 
 func CleanAllTags(txDb *gorm.DB, clubId string) error {
 	err := txDb.Where("club_id = ?", clubId).Delete(&ClubTagRelationship{}).Error
+	return err
+}
+
+type UpdateUser struct {
+	UserList
+	SrcLoopUID string
+}
+
+func (u *UpdateUser) Update() error {
+	err := DB.Model(UserList{}).Where("loop_uid = ?", u.SrcLoopUID).
+		Updates(map[string]interface{}{"loop_uid": u.LoopUID, "loop_user_name": u.LoopUserName}).
+		Error
 	return err
 }
 
