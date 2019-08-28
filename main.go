@@ -235,12 +235,21 @@ func getUnreadViewList(ctx *gin.Context) {
 		return
 	}
 
-	//get user view list, returns empty list when view list not found.
+	//get user view list, create new view list when not found.
 	viewList, err := db.GetLatestViewListByUID(user.LoopUID)
 	if gorm.IsRecordNotFoundError(err) {
-		emptyResp := make([]FavouriteClubInfo, 0)
-		ctx.JSON(http.StatusOK, httpserver.SuccessResponse(emptyResp))
-		return
+		//try to create view list
+		viewList = &db.ViewList{
+			LoopUID:    user.LoopUID,
+			ViewListID: uuid.New().String(),
+		}
+		err = viewList.Insert()
+		//fail to create view list
+		if err != nil {
+			log.Error("fail to create view list when register, error:", err)
+			ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+			return
+		}
 	}
 	if err != nil {
 		log.Error(err)
@@ -248,8 +257,8 @@ func getUnreadViewList(ctx *gin.Context) {
 		return
 	}
 
-	//Get all club infos attached with current user favourite or not
-	favouriteClubInfos, err := db.GetAllPublishedFavouriteClubInfo(user.LoopUID)
+	//Get not read club infos attached with current user favourite or not
+	notReadClubInfos, err := db.GetUnreadPublishedFavouriteClubInfo(user.LoopUID, viewList.ViewListID)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -257,7 +266,7 @@ func getUnreadViewList(ctx *gin.Context) {
 	}
 
 	//construct response club info from DB query result
-	responseClubs, err := getResponseFromFavouriteClubInfos(favouriteClubInfos)
+	responseClubs, err := getResponseFromFavouriteClubInfos(notReadClubInfos)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -268,32 +277,8 @@ func getUnreadViewList(ctx *gin.Context) {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(responseClubs), func(i, j int) { responseClubs[i], responseClubs[j] = responseClubs[j], responseClubs[i] })
 
-	//get read club ids
-	logs, err := db.GetViewedListByID(user.LoopUID, viewList.ViewListID)
-	if err != nil {
-		log.Error(err)
-		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
-		return
-	}
-
-	//remove clubs already read in response clubs
-	responseUnreadClubs := make([]FavouriteClubInfo, 0)
-	for _, club := range responseClubs {
-		var read bool
-		for _, l := range logs {
-			if club.ClubID == l.ClubID {
-				read = true
-				break
-			}
-		}
-		if read {
-			continue
-		}
-		responseUnreadClubs = append(responseUnreadClubs, club)
-	}
-
 	//construct response unread view list
-	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseUnreadClubs))
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseClubs))
 }
 
 type MarkClubReadInViewListRequest struct {
@@ -678,18 +663,6 @@ func registerAppUser(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
 		log.Error(err)
-		return
-	}
-
-	//try to create view list
-	viewList := db.ViewList{
-		LoopUID:    user.LoopUID,
-		ViewListID: uuid.New().String(),
-	}
-	err = viewList.Insert()
-	//ignore error when fail to create view list
-	if err != nil {
-		log.Error("fail to create view list when register, error:", err)
 		return
 	}
 

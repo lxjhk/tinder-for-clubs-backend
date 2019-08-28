@@ -227,6 +227,18 @@ func GetAllPublishedFavouriteClubInfo(uid string) ([]FavouriteClubInfo, error) {
 	return favouriteClubInfos, err
 }
 
+func GetUnreadPublishedFavouriteClubInfo(uid, viewListID string) ([]FavouriteClubInfo, error) {
+	favouriteClubInfos := make([]FavouriteClubInfo, 0)
+	userFavourite := DB.Select("*").Table("user_favourite").Where("loop_uid = ?", uid).SubQuery()
+	readClubIds := DB.Select("club_id").Table("view_list_log").Where("loop_uid = ? AND view_list_id = ?", uid, viewListID).SubQuery()
+	err := DB.Table("club_info c").Select("c.*, f.favourite").
+		Joins("LEFT JOIN ? f ON c.club_id = f.club_id", userFavourite).
+		Where("c.published = 1 AND c.club_id not in (?)", readClubIds).
+		Scan(&favouriteClubInfos).
+		Error
+	return favouriteClubInfos, err
+}
+
 func GetAllPublishedFavouriteClubInfoByClubIDs(uid string, ids []string) ([]FavouriteClubInfo, error) {
 	favouriteClubInfos := make([]FavouriteClubInfo, 0)
 	err := DB.Table("club_info c").Select("c.*, f.favourite").
