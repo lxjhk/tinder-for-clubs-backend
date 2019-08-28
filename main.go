@@ -86,6 +86,8 @@ func initializeRoutes() {
 	router.GET("/admin/account/all", listAllAccounts)
 	router.GET("/admin/account/user/:userId", getAccountByUserId)
 	router.GET("/admin/clubinfo/all", listAllClubs)
+	router.GET("/admin/clubinfo", getOneClubInfo)
+	router.PUT("/admin/clubinfo", unpublishClub)
 
 	// Club manager endpoints
 	router.GET("/account", getCurrUser)
@@ -111,6 +113,76 @@ func initializeRoutes() {
 	router.GET("/app/viewlist/unreadlist", getUnreadViewList)
 	router.GET("/app/viewlist/new", createNewViewList)
 	router.PUT("/app/viewlist/markread", markClubReadInViewList)
+}
+
+func unpublishClub(ctx *gin.Context) {
+	//check admin or not
+	account, err := getAdminUser(ctx)
+	if err != nil {
+		return
+	}
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	var idReq ClubIDRequest
+	if err := ctx.ShouldBindJSON(&idReq);err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
+	err = db.UpdateClubPublishedOrNot(idReq.ClubId, false)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(nil))
+}
+
+func getOneClubInfo(ctx *gin.Context) {
+	//check admin or not
+	account, err := getAdminUser(ctx)
+	if err != nil {
+		return
+	}
+	if !account.IsAdmin {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
+		return
+	}
+
+	//check club id
+	clubId := ctx.Query("club_id")
+	if clubId == "" {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+
+	//get response club info
+	clubInfo, err := db.GetClubInfoCountByClubId(clubId)
+	if gorm.IsRecordNotFoundError(err) {
+		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
+		return
+	}
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	tagIds, pictureIds, err := getClubTagIdsAndPictureIds(clubInfo.ClubID,
+		clubInfo.Pic1ID, clubInfo.Pic2ID, clubInfo.Pic3ID, clubInfo.Pic4ID, clubInfo.Pic5ID, clubInfo.Pic6ID)
+	if err != nil {
+		log.Error(err)
+		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
+		return
+	}
+
+	club := constructClubInfoCountPost(clubInfo, tagIds, pictureIds)
+	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(club))
 }
 
 type UpdateUserPost struct {
@@ -160,11 +232,11 @@ type AccountPost struct {
 }
 
 func updateAccountInfo(ctx *gin.Context) {
+	//check admin or not
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
-
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -281,7 +353,7 @@ func getUnreadViewList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(responseClubs))
 }
 
-type MarkClubReadInViewListRequest struct {
+type ClubIDRequest struct {
 	ClubId string `json:"club_id"`
 }
 
@@ -295,8 +367,8 @@ func markClubReadInViewList(ctx *gin.Context) {
 	}
 
 	//get request params
-	var markReq MarkClubReadInViewListRequest
-	if err := ctx.ShouldBindJSON(&markReq); err != nil {
+	var idReq ClubIDRequest
+	if err := ctx.ShouldBindJSON(&idReq); err != nil {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		log.Error(err)
 		return
@@ -311,7 +383,7 @@ func markClubReadInViewList(ctx *gin.Context) {
 	}
 
 	//check club
-	_, err = db.GetClubInfoByClubId(markReq.ClubId)
+	_, err = db.GetClubInfoByClubId(idReq.ClubId)
 	if gorm.IsRecordNotFoundError(err) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
@@ -326,7 +398,7 @@ func markClubReadInViewList(ctx *gin.Context) {
 	viewLog := db.ViewListLog{
 		ViewListID: viewList.ViewListID,
 		LoopUID:    user.LoopUID,
-		ClubID:     markReq.ClubId,
+		ClubID:     idReq.ClubId,
 	}
 	err = viewLog.Insert()
 	if err != nil {
@@ -860,12 +932,11 @@ type PageResult struct {
 }
 
 func listAllClubs(ctx *gin.Context) {
-	//check if this is admin
+	//check admin or not
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
-
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -1033,11 +1104,11 @@ func getClubInfoConditionFromRequest(ctx *gin.Context) (*db.ClubInfoCondition, b
 }
 
 func getAccountByUserId(ctx *gin.Context) {
+	//check admin or not
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
-
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -1058,11 +1129,11 @@ func getAccountByUserId(ctx *gin.Context) {
 }
 
 func listAllAccounts(ctx *gin.Context) {
+	//check admin or not
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
-
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusUnauthorized, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return
@@ -1123,11 +1194,11 @@ type NewClubAccountPost struct {
 
 //creates a club account and its club info.
 func createNewClubAccount(ctx *gin.Context) {
+	//check admin or not
 	account, err := getAdminUser(ctx)
 	if err != nil {
 		return
 	}
-
 	if !account.IsAdmin {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.NO_PERMISSION, nil))
 		return

@@ -97,7 +97,7 @@ type ClubInfo struct {
 	GroupLink string `gorm:"type:varchar(500);"             json:"group_link"`
 	VideoLink string `gorm:"type:varchar(500);"             json:"video_link"`
 	// Whether the club is viewable
-	Published   bool   `gorm:"type:tinyint(1);" json:"published"`
+	Published   bool   `gorm:"type:tinyint(1);index" json:"published"`
 	Description string `gorm:"type:varchar(4000);" json:"description"`
 
 	LogoID string `gorm:"type:varchar(40)" json:"logo_id"`
@@ -110,10 +110,27 @@ type ClubInfo struct {
 	Pic6ID string `gorm:"type:varchar(500);" json:"pic6_id"`
 }
 
+func UpdateClubPublishedOrNot(clubID string,published bool) error {
+	err := DB.Model(ClubInfo{}).Where("club_id = ?",clubID).Update("published", published).Error
+	return err
+}
+
 type ClubInfoCount struct {
 	ClubInfo
 	FavouriteNum int64 `json:"favourite_num"`
 	ViewNum      int64 `json:"view_num"`
+}
+
+func GetClubInfoCountByClubId(id string) (ClubInfoCount, error) {
+	var clubInfo ClubInfoCount
+	favouriteNumQuery := DB.Select("club_id, count(*) favourite_num").Table("user_favourite").Where("club_id = ?",id).SubQuery()
+	viewNumQuery := DB.Select("club_id, count(*) view_num").Table("view_list_log").Where("club_id = ?", id).SubQuery()
+	err := DB.Table("club_info c").Select("c.*, f.favourite_num, v.view_num").
+		Joins("LEFT JOIN ? f ON c.club_id = f.club_id", favouriteNumQuery).
+		Joins("LEFT JOIN ? v ON c.club_id = v.club_id", viewNumQuery).
+		Where("c.club_id = ?",id).
+		Scan(&clubInfo).Error
+	return clubInfo, err
 }
 
 type PageRequest struct {
@@ -231,9 +248,11 @@ func GetUnreadPublishedFavouriteClubInfo(uid, viewListID string) ([]FavouriteClu
 	favouriteClubInfos := make([]FavouriteClubInfo, 0)
 	userFavourite := DB.Select("*").Table("user_favourite").Where("loop_uid = ?", uid).SubQuery()
 	readClubIds := DB.Select("club_id").Table("view_list_log").Where("loop_uid = ? AND view_list_id = ?", uid, viewListID).SubQuery()
+
 	err := DB.Table("club_info c").Select("c.*, f.favourite").
 		Joins("LEFT JOIN ? f ON c.club_id = f.club_id", userFavourite).
-		Where("c.published = 1 AND c.club_id not in (?)", readClubIds).
+		Joins("LEFT JOIN ? v ON v.club_id = c.club_id", readClubIds).
+		Where("c.published = 1 and v.club_id IS NULL").
 		Scan(&favouriteClubInfos).
 		Error
 	return favouriteClubInfos, err
