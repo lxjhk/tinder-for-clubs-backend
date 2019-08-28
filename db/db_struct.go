@@ -123,8 +123,8 @@ type ClubInfoCount struct {
 
 func GetClubInfoCountByClubId(id string) (ClubInfoCount, error) {
 	var clubInfo ClubInfoCount
-	favouriteNumQuery := DB.Select("club_id, count(*) favourite_num").Table("user_favourite").Where("club_id = ?",id).SubQuery()
-	viewNumQuery := DB.Select("club_id, count(*) view_num").Table("view_list_log").Where("club_id = ?", id).SubQuery()
+	favouriteNumQuery := DB.Select("club_id, count(*) favourite_num").Table("user_favourite").Group("club_id").Having("club_id = ?",id).SubQuery()
+	viewNumQuery := DB.Select("club_id, count(*) view_num").Table("view_list_log").Group("club_id").Having("club_id = ?", id).SubQuery()
 	err := DB.Table("club_info c").Select("c.*, f.favourite_num, v.view_num").
 		Joins("LEFT JOIN ? f ON c.club_id = f.club_id", favouriteNumQuery).
 		Joins("LEFT JOIN ? v ON c.club_id = v.club_id", viewNumQuery).

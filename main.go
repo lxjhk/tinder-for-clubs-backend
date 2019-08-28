@@ -860,7 +860,7 @@ func getSelfClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	clubInfo, err := db.GetClubInfoByClubId(account.ClubID)
+	clubInfo, err := db.GetClubInfoCountByClubId(account.ClubID)
 	if err != nil {
 		log.Error(err)
 		ctx.JSON(http.StatusInternalServerError, httpserver.ConstructResponse(httpserver.SYSTEM_ERROR, nil))
@@ -874,7 +874,7 @@ func getSelfClubInfo(ctx *gin.Context) {
 		return
 	}
 
-	clubInfoResponse := constructClubInfoPost(clubInfo, tagIDs, pictureIDs)
+	clubInfoResponse :=constructClubInfoCountPost(clubInfo, tagIDs, pictureIDs)
 
 	ctx.JSON(http.StatusOK, httpserver.SuccessResponse(clubInfoResponse))
 }
