@@ -1312,7 +1312,7 @@ type ClubInfoCountPost struct {
 }
 
 const (
-	CLUB_NAME_MAX_LEN = 50
+	CLUB_NAME_MAX_LEN = 100
 	CLUB_PIC_MAX_NUM  = 6
 	CLUB_TAG_MAX_NUM  = 4
 )
@@ -1342,7 +1342,7 @@ func updateClubInfo(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.CLUB_TAG_NUM_ABOVE_LIMIT, nil))
 		return
 	}
-	if len(clubInfoPost.Website) > 100 {
+	if len(clubInfoPost.Website) > 300 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.WEB_SITE_TOO_LONG, nil))
 		return
 	}
@@ -1350,15 +1350,15 @@ func updateClubInfo(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.EMAIL_TOO_LONG, nil))
 		return
 	}
-	if len(clubInfoPost.Description) > 2000 {
+	if len(clubInfoPost.Description) > 4000 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.DESC_TOO_LONG, nil))
 		return
 	}
-	if len(clubInfoPost.VideoLink) > 200 {
+	if len(clubInfoPost.VideoLink) > 300 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.VIDEO_LINK_TOO_LONG, nil))
 		return
 	}
-	if len(clubInfoPost.GroupLink) > 100 {
+	if len(clubInfoPost.GroupLink) > 150 {
 		ctx.JSON(http.StatusBadRequest, httpserver.ConstructResponse(httpserver.INVALID_PARAMS, nil))
 		return
 	}
